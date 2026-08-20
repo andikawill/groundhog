@@ -29,7 +29,10 @@ function coerce(raw: string): string | number {
 
 function compare(op: string, left: unknown, right: string | number): boolean | undefined {
   const bothNumeric =
-    typeof right === 'number' && left !== null && !Number.isNaN(Number(left))
+    typeof right === 'number' &&
+    left !== null &&
+    left !== '' &&
+    !Number.isNaN(Number(left))
   const leftValue = bothNumeric ? Number(left) : left
   switch (op) {
     case '==':

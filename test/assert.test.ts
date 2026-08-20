@@ -95,4 +95,16 @@ describe('evalExpr', () => {
   it('echoes the original expression back', () => {
     expect(evalExpr('status == 200', target, resolver()).expr).toBe('status == 200')
   })
+
+  it('does not treat an empty string as the number zero', () => {
+    const empty = { ...target, json: { data: { count: '' } } }
+    expect(evalExpr('$.data.count == 0', empty, resolver()).ok).toBe(false)
+    expect(evalExpr('$.data.count != 0', empty, resolver()).ok).toBe(true)
+  })
+
+  it('fails instead of throwing on an invalid regular expression', () => {
+    const result = evalExpr('$.data.id matches (', target, resolver())
+    expect(result.ok).toBe(false)
+    expect(result.detail).toBeTruthy()
+  })
 })
