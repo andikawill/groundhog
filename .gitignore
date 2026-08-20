@@ -1,0 +1,9 @@
+node_modules/
+.next/
+*.db
+*.db-journal
+.env
+.env.local
+assets/
+.superpowers/
+docs/superpowers/
