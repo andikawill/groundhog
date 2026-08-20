@@ -471,4 +471,47 @@ describe('runCase', () => {
       }),
     ).rejects.toBeInstanceOf(PreflightError)
   })
+
+  it('draws a pool value declared on the case', async () => {
+    let sent = ''
+    mock = await startMock({
+      'POST /meal': (req) => {
+        sent = req.body
+        return { body: '{}' }
+      },
+    })
+    const result = await run(
+      {
+        name: 'pools',
+        pools: { mealName: ['nasi lemak', 'roti canai'] },
+        steps: [
+          {
+            id: 'meal',
+            method: 'POST',
+            url: '{{env.API}}/meal',
+            body: { type: 'json', value: { dish: '{{pool.mealName}}' } },
+          },
+        ],
+      },
+      mock.url,
+    )
+    expect(result.steps[0].status).toBe('passed')
+    expect(['nasi lemak', 'roti canai']).toContain(JSON.parse(sent).dish)
+  })
+
+  it('names the underlying cause when a host cannot be reached', async () => {
+    mock = await startMock({ 'GET /ok': () => ({ body: '{}' }) })
+    const result = await run(
+      {
+        name: 'dns',
+        steps: [
+          { id: 'ok', method: 'GET', url: '{{env.API}}/ok' },
+          { id: 'gone', method: 'GET', url: 'http://no-such-host.invalid/x' },
+        ],
+      },
+      mock.url,
+    )
+    expect(result.steps[1].status).toBe('failed')
+    expect(result.steps[1].reason?.length).toBeGreaterThan('fetch failed'.length)
+  })
 })

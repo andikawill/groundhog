@@ -77,6 +77,7 @@ export async function runCase(options: RunOptions): Promise<RunResult> {
     seed: options.seed,
     assetsDir: options.assetsDir,
     nowMs: options.anchorAt,
+    pools: options.case.pools,
   })
 
   const secretValues = [...options.env.secrets]
@@ -174,7 +175,9 @@ export async function runCase(options: RunOptions): Promise<RunResult> {
       finish({
         ...base,
         status: 'failed',
-        reason: outcome.message,
+        reason: [outcome.message, (outcome.cause as Error | undefined)?.message]
+          .filter(Boolean)
+          .join(': '),
         request: redactRequest(request, makeRedactor(secretValues)),
         attempts,
         durationMs: Date.now() - sentAt,
