@@ -1,4 +1,4 @@
-import { readFileSync } from 'node:fs'
+import { readAsset } from './assets'
 import type { SentRequest, Step } from './types'
 import { renderString, renderValue, type Resolver } from './template'
 
@@ -31,7 +31,7 @@ export function buildRequest(step: Step, r: Resolver): SentRequest {
     }
     case 'file': {
       const path = renderString(step.body.path, r)
-      request.bodyBytes = new Uint8Array(readFileSync(`${r.assetsDir}/${path}`))
+      request.bodyBytes = readAsset(r.assetsDir, path)
       defaultContentType(headers, 'application/octet-stream')
       break
     }
@@ -51,7 +51,7 @@ export function buildRequest(step: Step, r: Resolver): SentRequest {
           form.set(key, renderString(value, r))
         } else {
           const path = renderString(value.file, r)
-          const bytes = new Uint8Array(readFileSync(`${r.assetsDir}/${path}`))
+          const bytes = readAsset(r.assetsDir, path)
           form.set(key, new Blob([bytes]), path.split('/').pop())
         }
       }

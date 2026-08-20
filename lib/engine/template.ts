@@ -1,4 +1,4 @@
-import { readdirSync } from 'node:fs'
+import { listAssets } from './assets'
 import { generate, makeRng } from './rng'
 import { readPath } from './path'
 
@@ -67,7 +67,7 @@ function pickAsset(rest: string, r: Resolver): string {
   const match = /^pick\((.*)\)$/.exec(rest)
   if (!match) return rest
   const folder = match[1].replace(/^['"]|['"]$/g, '').replace(/\/$/, '')
-  const files = readdirSync(`${r.assetsDir}/${folder}`).sort()
+  const files = listAssets(r.assetsDir, folder)
   if (files.length === 0) throw new MissingRefError(`asset.${rest}`)
   return `${folder}/${files[Math.floor(r.rng() * files.length)]}`
 }
