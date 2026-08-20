@@ -57,12 +57,13 @@ function resolveToken(namespace: string, rest: string, r: Resolver): unknown {
   const cached = r.autoCache.get(cacheKey)
   if (cached !== undefined) return cached
 
+  const name = rest.split('#')[0]
   const produced =
     namespace === 'auto'
-      ? generate(rest.split('#')[0], r.rng, r.nowMs)
+      ? generate(name, r.rng, r.nowMs)
       : namespace === 'pool'
-        ? pickPool(rest, r)
-        : pickAsset(rest, r)
+        ? pickPool(name, r)
+        : pickAsset(name, r)
 
   r.autoCache.set(cacheKey, produced)
   return produced

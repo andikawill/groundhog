@@ -184,3 +184,19 @@ describe('pool', () => {
     expect(pools.mealName).toContain(out.dish)
   })
 })
+
+describe('the #n disambiguator', () => {
+  it('applies to a pool, not only to auto', () => {
+    const pools = { dish: ['a', 'b', 'c', 'd', 'e', 'f', 'g', 'h'] }
+    const r = resolver({ pools })
+    const first = renderString('{{pool.dish}}', r)
+    const second = renderString('{{pool.dish#2}}', r)
+    expect(pools.dish).toContain(first)
+    expect(pools.dish).toContain(second)
+  })
+
+  it('applies to an asset without producing a literal path', () => {
+    const r = resolver()
+    expect(renderString('{{asset.pick(meals/)#2}}', r)).toMatch(/^meals\/[ab]\.jpg$/)
+  })
+})

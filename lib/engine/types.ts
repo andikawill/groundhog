@@ -31,6 +31,7 @@ export type Step = {
 export type TestCase = {
   name: string
   steps: Step[]
+  pools?: Record<string, string[]>
   redact?: string[]
 }
 
