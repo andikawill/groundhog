@@ -21,13 +21,28 @@ if (!values.case || !values.env) {
   process.exit(2)
 }
 
-const read = <T>(path: string): T => JSON.parse(readFileSync(path, 'utf8')) as T
-const testCase = read<TestCase>(values.case)
-const active = read<EnvDef>(values.env)
-const shared = values.shared ? read<EnvDef>(values.shared) : undefined
+const fail = (message: string): never => {
+  console.error(message)
+  process.exit(2)
+}
+
+const read = <T>(path: string, what: string): T => {
+  try {
+    return JSON.parse(readFileSync(path, 'utf8')) as T
+  } catch (error) {
+    return fail(`cannot read ${what} "${path}": ${(error as Error).message}`)
+  }
+}
+
+const testCase = read<TestCase>(values.case, 'case file')
+const active = read<EnvDef>(values.env, 'env file')
+const shared = values.shared ? read<EnvDef>(values.shared, 'shared env file') : undefined
 
 const seed = values.seed ?? Math.floor(Math.random() * 0xffffffff).toString(16)
 const anchorAt = values.anchor ? Date.parse(values.anchor) : Date.now()
+if (Number.isNaN(anchorAt)) {
+  fail(`--anchor "${values.anchor}" is not a date this can parse; use an ISO timestamp`)
+}
 
 const rl = createInterface({ input: process.stdin, output: process.stdout })
 
