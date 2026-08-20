@@ -1,5 +1,6 @@
 import { readAsset } from './assets'
-import type { SentRequest, Step } from './types'
+import { MAX_BODY_BYTES, TRACE_HEADERS } from './types'
+import type { RawResponse, SentRequest, Step } from './types'
 import { renderString, renderValue, type Resolver } from './template'
 
 function lowerHeaders(headers: Record<string, string> | undefined, r: Resolver) {
@@ -65,4 +66,44 @@ export function buildRequest(step: Step, r: Resolver): SentRequest {
     }
   }
   return request
+}
+
+export function traceOf(headers: Record<string, string>): Record<string, string> | undefined {
+  const out: Record<string, string> = {}
+  for (const name of TRACE_HEADERS) {
+    if (headers[name] !== undefined) out[name] = headers[name]
+  }
+  return Object.keys(out).length > 0 ? out : undefined
+}
+
+export async function send(request: SentRequest, timeoutMs: number): Promise<RawResponse> {
+  const started = Date.now()
+  const body =
+    request.multipart ?? request.bodyBytes ?? request.body ?? undefined
+
+  const response = await fetch(request.url, {
+    method: request.method,
+    headers: request.multipart
+      ? Object.fromEntries(Object.entries(request.headers).filter(([k]) => k !== 'content-type'))
+      : request.headers,
+    body: request.method === 'GET' ? undefined : (body as BodyInit | undefined),
+    redirect: 'manual',
+    signal: AbortSignal.timeout(timeoutMs),
+  })
+
+  const headers: Record<string, string> = {}
+  response.headers.forEach((value, key) => {
+    headers[key.toLowerCase()] = value
+  })
+
+  const full = await response.text()
+  const truncated = full.length > MAX_BODY_BYTES
+
+  return {
+    status: response.status,
+    headers,
+    text: truncated ? full.slice(0, MAX_BODY_BYTES) : full,
+    truncated,
+    durationMs: Date.now() - started,
+  }
 }
