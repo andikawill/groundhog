@@ -112,9 +112,20 @@ A case is a list of steps. A step is a request you declare in full:
 }
 ```
 
-Four namespaces fill the tokens: `{{env.*}}` from the selected environment,
+Five namespaces fill the tokens: `{{env.*}}` from the selected environment,
 `{{ctx.*}}` from earlier responses, `{{auto.*}}` generated from the run's seed,
-`{{asset.*}}` picked from a folder of files.
+`{{pool.*}}` drawn from a list the case declares, and `{{asset.*}}` picked from a
+folder of files.
+
+A pool is for values with no shape — dish names, districts — where a generator
+would produce something obviously fake:
+
+```json
+{ "pools": { "mealName": ["nasi lemak", "roti canai", "char kway teow"] } }
+```
+
+Declared once on the case, drawn with `{{pool.mealName}}`, picked by the seed like
+everything else.
 
 ## Four rules, and the bug each one prevents
 
@@ -123,8 +134,9 @@ are generated, and the tool never invents a step you did not declare. *Prevents:
 debugging a request you did not write.*
 
 **One token, one value.** `{{auto.email}}` in step 1 and step 5 is the same
-email. Need a second: `{{auto.email#2}}`. *Prevents: a login step and a lookup
-step silently disagreeing about which user they mean.*
+email. Need a second: `{{auto.email#2}}` — the suffix works on any namespace.
+*Prevents: a login step and a lookup step silently disagreeing about which user
+they mean.*
 
 **A whole-field token keeps its type.** An extracted array injected as an entire
 field stays an array; embedded inside a longer string it is stringified.

@@ -514,4 +514,80 @@ describe('runCase', () => {
     expect(result.steps[1].status).toBe('failed')
     expect(result.steps[1].reason?.length).toBeGreaterThan('fetch failed'.length)
   })
+
+  it('redacts a secret out of an assertion detail, not only the response', async () => {
+    mock = await startMock({ 'GET /x': () => ({ body: '{"data":{"echo":"tok_secret_value"}}' }) })
+    const result = await run(
+      {
+        name: 'assert detail',
+        steps: [
+          {
+            id: 'x',
+            method: 'GET',
+            url: '{{env.API}}/x',
+            assert: [{ expr: '$.data.echo == "nope"' }],
+          },
+        ],
+      },
+      mock.url,
+    )
+    expect(result.steps[0].status).toBe('failed')
+    expect(JSON.stringify(result.steps[0].asserts)).not.toContain('tok_secret_value')
+  })
+
+  it('redacts a numeric secret named in case.redact', async () => {
+    mock = await startMock({
+      'POST /login': () => ({ body: '{"data":{"acct":5512345678901234}}' }),
+      'POST /use': () => ({ body: '{}' }),
+    })
+    const result = await run(
+      {
+        name: 'numeric secret',
+        redact: ['acct'],
+        steps: [
+          { id: 'login', method: 'POST', url: '{{env.API}}/login', extract: { acct: '$.data.acct' } },
+          {
+            id: 'use',
+            method: 'POST',
+            url: '{{env.API}}/use',
+            needs: ['login'],
+            body: { type: 'json', value: { a: '{{ctx.acct}}' } },
+          },
+        ],
+      },
+      mock.url,
+    )
+    expect(result.steps[0].response?.text).not.toContain('5512345678901234')
+    expect(result.steps[1].request?.body).not.toContain('5512345678901234')
+  })
+
+  it('names the cause when a dual-stack host refuses the connection', async () => {
+    mock = await startMock({ 'GET /ok': () => ({ body: '{}' }) })
+    const result = await run(
+      {
+        name: 'refused',
+        steps: [
+          { id: 'ok', method: 'GET', url: '{{env.API}}/ok' },
+          { id: 'refused', method: 'GET', url: 'http://localhost:49999/x' },
+        ],
+      },
+      mock.url,
+    )
+    expect(result.steps[1].status).toBe('failed')
+    expect(result.steps[1].reason).toContain('ECONNREFUSED')
+  })
+
+  it('passes a run the operator chose to skip entirely', async () => {
+    mock = await startMock({ 'GET /x': () => ({ body: '{}' }) })
+    const result = await runCase({
+      case: { name: 'all skipped', steps: [{ id: 'x', method: 'GET', url: '{{env.API}}/x', pause: true }] },
+      env: env(mock.url),
+      seed: 'run-seed',
+      anchorAt: ANCHOR,
+      assetsDir: 'test/assets',
+      onPause: async () => 'skip',
+    })
+    expect(result.steps[0].status).toBe('skipped')
+    expect(result.status).toBe('passed')
+  })
 })
