@@ -33,14 +33,20 @@ npm test
 Run a case:
 
 ```bash
-npm run run-case -- --case examples/food-journal.case.json --env examples/staging.env.json
+npm run run-case -- --case examples/food-journal.case.json --env examples/staging.env.json --assets examples/assets
 ```
 
 Replay a previous run exactly — copy the seed and anchor the CLI printed:
 
 ```bash
-npm run run-case -- --case examples/food-journal.case.json --env examples/staging.env.json --seed abc123 --anchor 2026-08-20T00:00:00.000Z
+npm run run-case -- --case examples/food-journal.case.json --env examples/staging.env.json --assets examples/assets --seed abc123 --anchor 2026-08-20T00:00:00.000Z
 ```
+
+The example env points at a host that does not exist, so the first step fails —
+that is the shape of the output, not a working demo. Point `--env` at a file of
+your own to run it for real. `--assets` defaults to `assets/`, which is
+gitignored so your own fixtures stay out of the repository; the example ships
+its own under `examples/assets/`.
 
 `--seed` reproduces every `{{auto.*}}` value; `--anchor` reproduces every generated date.
 Both are needed for an identical payload.
