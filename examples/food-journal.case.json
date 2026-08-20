@@ -1,0 +1,88 @@
+{
+  "name": "food-journal",
+  "redact": [],
+  "steps": [
+    {
+      "id": "presign",
+      "title": "Ambil presigned URL",
+      "method": "POST",
+      "url": "{{env.API}}/v1/media/presigned-url",
+      "headers": { "Authorization": "Bearer {{env.TOKEN}}" },
+      "body": {
+        "type": "json",
+        "value": { "fileName": "{{auto.uuid}}.jpg", "contentType": "image/jpeg" }
+      },
+      "extract": { "uploadUrl": "$.data.uploadUrl", "fileKey": "$.data.key" },
+      "assert": [{ "expr": "status == 200" }]
+    },
+    {
+      "id": "upload",
+      "title": "Upload foto ke presigned URL",
+      "method": "PUT",
+      "url": "{{ctx.uploadUrl}}",
+      "needs": ["presign"],
+      "headers": { "Content-Type": "image/jpeg" },
+      "body": { "type": "file", "path": "{{asset.pick(meals/)}}" },
+      "extract": { "etag": "$header.etag" },
+      "assert": [{ "expr": "status == 200" }]
+    },
+    {
+      "id": "classify",
+      "title": "Tunggu klasifikasi selesai",
+      "method": "GET",
+      "url": "{{env.API}}/v1/food/classification?key={{ctx.fileKey}}",
+      "needs": ["upload"],
+      "retryUntil": "$.data.status == \"done\"",
+      "every": "20ms",
+      "timeout": "2s",
+      "extract": { "classification": "$.data" }
+    },
+    {
+      "id": "save",
+      "title": "Simpan food journal",
+      "method": "POST",
+      "url": "{{env.API}}/v1/food-journal",
+      "needs": ["classify"],
+      "headers": { "Authorization": "Bearer {{env.TOKEN}}" },
+      "body": {
+        "type": "json",
+        "value": {
+          "mealTime": "{{auto.pastDate(7)}}",
+          "imageKey": "{{ctx.fileKey}}",
+          "items": "{{ctx.classification.items}}"
+        }
+      },
+      "extract": { "journalId": "$.data.id" },
+      "assert": [{ "expr": "status == 200" }]
+    },
+    {
+      "id": "journal",
+      "title": "Cek journal tersimpan",
+      "method": "GET",
+      "url": "{{env.API}}/v1/food-journal/{{ctx.journalId}}",
+      "needs": ["save"],
+      "assert": [
+        { "expr": "status == 200" },
+        { "expr": "$.data.imageKey == \"{{ctx.fileKey}}\"" },
+        { "expr": "$.data.items[0].name exists" }
+      ]
+    },
+    {
+      "id": "comment",
+      "title": "Tunggu komentar AI",
+      "method": "GET",
+      "url": "{{env.API}}/v1/food-journal/{{ctx.journalId}}/comment",
+      "needs": ["journal"],
+      "retryUntil": "$.data length > 0",
+      "every": "20ms",
+      "timeout": "2s"
+    },
+    {
+      "id": "cleanup",
+      "title": "Hapus journal test",
+      "method": "DELETE",
+      "url": "{{env.API}}/v1/food-journal/{{ctx.journalId}}",
+      "always": true
+    }
+  ]
+}
