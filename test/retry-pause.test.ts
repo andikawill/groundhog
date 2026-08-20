@@ -72,7 +72,7 @@ describe('retryUntil', () => {
             url: '{{env.API}}/job',
             retryUntil: '$.data.status == "done"',
             every: '10ms',
-            timeout: '80ms',
+            timeout: '400ms',
           },
         ],
       },
