@@ -81,6 +81,9 @@ npm run run-case -- --case food-journal.case.json --env staging.env.json \
   --seed 8f2a1c --anchor 2026-08-20T00:00:00.000Z
 ```
 
+Those two use short paths for readability; the runnable form is under
+[Status](#status) above.
+
 ## How it works
 
 A case is a list of steps. A step is a request you declare in full:
