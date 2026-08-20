@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest'
-import { buildRequest } from '../lib/engine/http'
+import { buildRequest, StepDeclarationError } from '../lib/engine/http'
 import { makeResolver } from '../lib/engine/template'
 import type { Step } from '../lib/engine/types'
 
@@ -120,5 +120,14 @@ describe('buildRequest', () => {
     const request = buildRequest({ id: 'g', method: 'GET', url: '{{env.API}}/x' }, resolver())
     expect(request.body).toBeUndefined()
     expect(request.bodyBytes).toBeUndefined()
+  })
+
+  it('refuses a GET step that declares a body', () => {
+    expect(() =>
+      buildRequest(
+        { id: 'g', method: 'GET', url: '{{env.API}}/x', body: { type: 'json', value: {} } },
+        resolver(),
+      ),
+    ).toThrow(StepDeclarationError)
   })
 })

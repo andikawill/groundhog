@@ -8,7 +8,7 @@ export type MockReq = {
   hit: number
 }
 export type MockRes = { status?: number; headers?: Record<string, string>; body?: string }
-export type MockRoutes = Record<string, (req: MockReq) => MockRes>
+export type MockRoutes = Record<string, (req: MockReq) => MockRes | Promise<MockRes>>
 export type MockHandle = { url: string; close: () => Promise<void>; hits: Record<string, number> }
 
 export async function startMock(routes: MockRoutes): Promise<MockHandle> {
@@ -28,17 +28,25 @@ export async function startMock(routes: MockRoutes): Promise<MockHandle> {
         res.end(JSON.stringify({ error: `no mock route for ${key}` }))
         return
       }
-      const out = handler({
-        body: Buffer.concat(chunks).toString('utf8'),
-        headers: req.headers as Record<string, string>,
-        query: url.searchParams,
-        hit: hits[key],
-      })
-      res.writeHead(out.status ?? 200, {
-        'content-type': 'application/json',
-        ...(out.headers ?? {}),
-      })
-      res.end(out.body ?? '')
+      Promise.resolve(
+        handler({
+          body: Buffer.concat(chunks).toString('utf8'),
+          headers: req.headers as Record<string, string>,
+          query: url.searchParams,
+          hit: hits[key],
+        }),
+      )
+        .then((out) => {
+          res.writeHead(out.status ?? 200, {
+            'content-type': 'application/json',
+            ...(out.headers ?? {}),
+          })
+          res.end(out.body ?? '')
+        })
+        .catch((error: unknown) => {
+          res.writeHead(500, { 'content-type': 'application/json' })
+          res.end(JSON.stringify({ error: String(error) }))
+        })
     })
   })
 

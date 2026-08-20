@@ -1,7 +1,15 @@
+import { Buffer } from 'node:buffer'
 import { readAsset } from './assets'
 import { MAX_BODY_BYTES, TRACE_HEADERS } from './types'
 import type { RawResponse, SentRequest, Step } from './types'
 import { renderString, renderValue, type Resolver } from './template'
+
+export class StepDeclarationError extends Error {
+  constructor(message: string) {
+    super(message)
+    this.name = 'StepDeclarationError'
+  }
+}
 
 function lowerHeaders(headers: Record<string, string> | undefined, r: Resolver) {
   const out: Record<string, string> = {}
@@ -23,6 +31,10 @@ export function buildRequest(step: Step, r: Resolver): SentRequest {
     headers,
   }
   if (!step.body) return request
+
+  if (step.method === 'GET') {
+    throw new StepDeclarationError(`step "${step.id}" is a GET but declares a body`)
+  }
 
   switch (step.body.type) {
     case 'json': {
@@ -76,6 +88,13 @@ export function traceOf(headers: Record<string, string>): Record<string, string>
   return Object.keys(out).length > 0 ? out : undefined
 }
 
+function cutAtCharBoundary(buffer: Buffer, limit: number): Buffer {
+  if (buffer.byteLength <= limit) return buffer
+  let end = limit
+  while (end > 0 && (buffer[end] & 0xc0) === 0x80) end -= 1
+  return buffer.subarray(0, end)
+}
+
 export async function send(request: SentRequest, timeoutMs: number): Promise<RawResponse> {
   const started = Date.now()
   const body =
@@ -86,7 +105,7 @@ export async function send(request: SentRequest, timeoutMs: number): Promise<Raw
     headers: request.multipart
       ? Object.fromEntries(Object.entries(request.headers).filter(([k]) => k !== 'content-type'))
       : request.headers,
-    body: request.method === 'GET' ? undefined : (body as BodyInit | undefined),
+    body: body as BodyInit | undefined,
     redirect: 'manual',
     signal: AbortSignal.timeout(timeoutMs),
   })
@@ -96,13 +115,14 @@ export async function send(request: SentRequest, timeoutMs: number): Promise<Raw
     headers[key.toLowerCase()] = value
   })
 
-  const full = await response.text()
-  const truncated = full.length > MAX_BODY_BYTES
+  const buffer = Buffer.from(await response.arrayBuffer())
+  const truncated = buffer.byteLength > MAX_BODY_BYTES
+  const text = cutAtCharBoundary(buffer, MAX_BODY_BYTES).toString('utf8')
 
   return {
     status: response.status,
     headers,
-    text: truncated ? full.slice(0, MAX_BODY_BYTES) : full,
+    text,
     truncated,
     durationMs: Date.now() - started,
   }
