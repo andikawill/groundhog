@@ -83,12 +83,6 @@ describe('send', () => {
     expect(mock.hits['GET /dest']).toBeUndefined()
   })
 
-  it('reports a duration', async () => {
-    mock = await startMock({ 'GET /t': () => ({ body: '{}' }) })
-    const response = await send({ method: 'GET', url: `${mock.url}/t`, headers: {} }, 5000)
-    expect(response.durationMs).toBeGreaterThanOrEqual(0)
-  })
-
   it('measures truncation in bytes, not UTF-16 code units', async () => {
     const oversized = '中'.repeat(MAX_BODY_BYTES)
     mock = await startMock({ 'GET /cjk': () => ({ body: oversized }) })

@@ -54,7 +54,6 @@ export type RawResponse = {
   headers: Record<string, string>
   text: string
   truncated: boolean
-  durationMs: number
 }
 
 export type RunStep = {
@@ -63,7 +62,7 @@ export type RunStep = {
   status: StepStatus
   reason?: string
   request?: SentRequest
-  response?: Omit<RawResponse, 'durationMs'>
+  response?: RawResponse
   asserts: AssertResult[]
   attempts: number
   durationMs: number

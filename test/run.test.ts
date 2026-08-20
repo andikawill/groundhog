@@ -376,4 +376,99 @@ describe('runCase', () => {
     expect(result.steps[0].attempts).toBeGreaterThan(2)
     expect(Date.now() - started).toBeLessThan(430)
   })
+
+  it('does not spend the request deadline on a delay', async () => {
+    mock = await startMock({ 'GET /x': () => ({ body: '{}' }) })
+    const result = await run(
+      {
+        name: 'delay then request',
+        steps: [
+          { id: 'x', method: 'GET', url: '{{env.API}}/x', delay: '300ms', timeout: '200ms' },
+        ],
+      },
+      mock.url,
+    )
+    expect(result.steps[0].status).toBe('passed')
+  })
+
+  it('does not spend the request deadline while paused', async () => {
+    mock = await startMock({ 'GET /x': () => ({ body: '{}' }) })
+    const result = await runCase({
+      case: {
+        name: 'pause then request',
+        steps: [{ id: 'x', method: 'GET', url: '{{env.API}}/x', pause: true, timeout: '200ms' }],
+      },
+      env: env(mock.url),
+      seed: 'run-seed',
+      anchorAt: ANCHOR,
+      assetsDir: 'test/assets',
+      onPause: async () => {
+        await new Promise((resolve) => setTimeout(resolve, 300))
+        return 'continue'
+      },
+    })
+    expect(result.steps[0].status).toBe('passed')
+    expect(result.steps[0].durationMs).toBeLessThan(200)
+  })
+
+  it('redacts a secret extracted as an object, not just as a string', async () => {
+    mock = await startMock({
+      'POST /login': () => ({ body: '{"data":{"session":{"token":"sk_live_super_secret"}}}' }),
+      'POST /use': () => ({ body: '{}' }),
+    })
+    const result = await run(
+      {
+        name: 'object secret',
+        redact: ['session'],
+        steps: [
+          { id: 'login', method: 'POST', url: '{{env.API}}/login', extract: { session: '$.data.session' } },
+          {
+            id: 'use',
+            method: 'POST',
+            url: '{{env.API}}/use',
+            needs: ['login'],
+            body: { type: 'json', value: { s: '{{ctx.session}}' } },
+          },
+        ],
+      },
+      mock.url,
+    )
+    expect(result.steps[0].response?.text).not.toContain('sk_live_super_secret')
+    expect(result.steps[1].request?.body).not.toContain('sk_live_super_secret')
+  })
+
+  it('records a failed step when an asset file is missing, keeping earlier steps', async () => {
+    mock = await startMock({ 'GET /ok': () => ({ body: '{}' }) })
+    const result = await run(
+      {
+        name: 'missing asset',
+        steps: [
+          { id: 'ok', method: 'GET', url: '{{env.API}}/ok' },
+          {
+            id: 'up',
+            method: 'PUT',
+            url: '{{env.API}}/upload',
+            body: { type: 'file', path: 'meals/missing.jpg' },
+          },
+        ],
+      },
+      mock.url,
+    )
+    expect(result.steps[0].status).toBe('passed')
+    expect(result.steps[1].status).toBe('failed')
+    expect(result.steps[1].reason).toBeTruthy()
+  })
+
+  it('rejects a case whose steps are missing', async () => {
+    mock = await startMock({ 'GET /x': () => ({ body: '{}' }) })
+    await expect(
+      runCase({
+        case: { name: 'typo' } as unknown as TestCase,
+        env: env(mock.url),
+        seed: 'run-seed',
+        anchorAt: ANCHOR,
+        assetsDir: 'test/assets',
+      }),
+    ).rejects.toBeInstanceOf(PreflightError)
+  })
 })

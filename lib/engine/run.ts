@@ -5,6 +5,20 @@ import { makeRedactor, redactRequest, redactResponse } from './redact'
 import { MissingRefError, makeResolver } from './template'
 import type { AssertResult, RawResponse, RunStep, Step, StepStatus, TestCase } from './types'
 
+function stringLeaves(value: unknown, out: string[]): void {
+  if (typeof value === 'string') {
+    out.push(value)
+    return
+  }
+  if (Array.isArray(value)) {
+    for (const item of value) stringLeaves(item, out)
+    return
+  }
+  if (value !== null && typeof value === 'object') {
+    for (const item of Object.values(value)) stringLeaves(item, out)
+  }
+}
+
 export class PreflightError extends Error {
   constructor(readonly errors: string[]) {
     super(`preflight failed:\n- ${errors.join('\n- ')}`)
@@ -122,12 +136,19 @@ export async function runCase(options: RunOptions): Promise<RunResult> {
         })
         continue
       }
-      throw error
+      finish({
+        ...base,
+        status: 'failed',
+        reason: error instanceof Error ? error.message : String(error),
+        durationMs: Date.now() - startedAt,
+      })
+      continue
     }
 
+    const sentAt = Date.now()
     const timeoutMs = parseDuration(step.timeout, 30000)
     const everyMs = parseDuration(step.every, 2000)
-    const deadline = startedAt + timeoutMs
+    const deadline = sentAt + timeoutMs
     let attempts = 0
 
     const attempt = async (): Promise<RawResponse | Error> => {
@@ -156,7 +177,7 @@ export async function runCase(options: RunOptions): Promise<RunResult> {
         reason: outcome.message,
         request: redactRequest(request, makeRedactor(secretValues)),
         attempts,
-        durationMs: Date.now() - startedAt,
+        durationMs: Date.now() - sentAt,
       })
       continue
     }
@@ -173,7 +194,7 @@ export async function runCase(options: RunOptions): Promise<RunResult> {
         continue
       }
       resolver.ctx[name] = value
-      if ((options.case.redact ?? []).includes(name)) secretValues.push(String(value))
+      if ((options.case.redact ?? []).includes(name)) stringLeaves(value, secretValues)
     }
 
     if (step.retryUntil) {
@@ -198,12 +219,18 @@ export async function runCase(options: RunOptions): Promise<RunResult> {
       asserts,
       attempts,
       trace: traceOf(response.headers),
-      durationMs: Date.now() - startedAt,
+      durationMs: Date.now() - sentAt,
     })
   }
 
+  const failed = steps.some((s) => s.status === 'failed')
+  const unresolved = steps.some(
+    (s) => s.status === 'skipped' && s.reason?.startsWith('unresolved'),
+  )
+  const ranSomething = steps.some((s) => s.status === 'passed')
+
   return {
-    status: steps.some((s) => s.status === 'failed') ? 'failed' : 'passed',
+    status: failed || unresolved || !ranSomething ? 'failed' : 'passed',
     steps,
     stepsSnapshot: snapshot,
     seed: options.seed,

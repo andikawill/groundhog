@@ -30,9 +30,9 @@ export function redactRequest(
 }
 
 export function redactResponse(
-  response: Omit<RawResponse, 'durationMs'>,
+  response: RawResponse,
   redact: (input: string) => string,
-): Omit<RawResponse, 'durationMs'> {
+): RawResponse {
   const headers: Record<string, string> = {}
   for (const [key, value] of Object.entries(response.headers)) headers[key] = redact(value)
   return {

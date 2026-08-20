@@ -25,6 +25,10 @@ export function preflight(input: {
   env: ResolvedEnv
   confirmed?: boolean
 }): string[] {
+  if (!Array.isArray(input.case.steps)) {
+    return ['case has no steps array']
+  }
+
   const errors: string[] = []
 
   for (const key of collectEnvRefs(input.case.steps)) {
