@@ -294,4 +294,51 @@ describe('runCase', () => {
     const second = await run(testCase, mock.url)
     expect(second.steps[0].request?.body).toBe(first.steps[0].request?.body)
   })
+
+  it('records a failed step instead of rejecting when the server is unreachable', async () => {
+    mock = await startMock({ 'GET /ok': () => ({ body: '{}' }) })
+    const result = await run(
+      {
+        name: 'unreachable',
+        steps: [
+          { id: 'ok', method: 'GET', url: '{{env.API}}/ok' },
+          { id: 'down', method: 'GET', url: 'http://127.0.0.1:1/nope' },
+        ],
+      },
+      mock.url,
+    )
+    expect(result.steps[0].status).toBe('passed')
+    expect(result.steps[1].status).toBe('failed')
+    expect(result.steps[1].reason).toBeTruthy()
+    expect(result.steps[1].request?.url).toBe('http://127.0.0.1:1/nope')
+    expect(result.status).toBe('failed')
+  })
+
+  it('fails a polling step at its deadline rather than starting a fresh timeout', async () => {
+    mock = await startMock({
+      'GET /slow': async () => {
+        await new Promise((resolve) => setTimeout(resolve, 500))
+        return { body: '{"data":{"status":"pending"}}' }
+      },
+    })
+    const started = Date.now()
+    const result = await run(
+      {
+        name: 'deadline',
+        steps: [
+          {
+            id: 'slow',
+            method: 'GET',
+            url: '{{env.API}}/slow',
+            retryUntil: '$.data.status == "done"',
+            every: '10ms',
+            timeout: '150ms',
+          },
+        ],
+      },
+      mock.url,
+    )
+    expect(result.steps[0].status).toBe('failed')
+    expect(Date.now() - started).toBeLessThan(400)
+  })
 })

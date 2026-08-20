@@ -3,7 +3,7 @@ import { StepDeclarationError, buildRequest, send, traceOf } from './http'
 import { preflight, type ResolvedEnv } from './preflight'
 import { makeRedactor, redactRequest, redactResponse } from './redact'
 import { MissingRefError, makeResolver } from './template'
-import type { AssertResult, RunStep, Step, StepStatus, TestCase } from './types'
+import type { AssertResult, RawResponse, RunStep, Step, StepStatus, TestCase } from './types'
 
 export class PreflightError extends Error {
   constructor(readonly errors: string[]) {
@@ -129,16 +129,39 @@ export async function runCase(options: RunOptions): Promise<RunResult> {
     const everyMs = parseDuration(step.every, 2000)
     const deadline = startedAt + timeoutMs
     let attempts = 0
-    let response = await send(request, timeoutMs)
-    attempts += 1
 
-    while (step.retryUntil) {
-      if (evalExpr(step.retryUntil, targetOf(response), resolver).ok) break
+    const attempt = async (): Promise<RawResponse | Error> => {
+      attempts += 1
+      const remaining = Math.max(1, deadline - Date.now())
+      try {
+        return await send(request, Math.min(timeoutMs, remaining))
+      } catch (error) {
+        return error instanceof Error ? error : new Error(String(error))
+      }
+    }
+
+    let outcome = await attempt()
+
+    while (step.retryUntil && !(outcome instanceof Error)) {
+      if (evalExpr(step.retryUntil, targetOf(outcome), resolver).ok) break
       if (Date.now() + everyMs >= deadline) break
       await new Promise((r) => setTimeout(r, everyMs))
-      response = await send(request, timeoutMs)
-      attempts += 1
+      outcome = await attempt()
     }
+
+    if (outcome instanceof Error) {
+      finish({
+        ...base,
+        status: 'failed',
+        reason: outcome.message,
+        request: redactRequest(request, makeRedactor(secretValues)),
+        attempts,
+        durationMs: Date.now() - startedAt,
+      })
+      continue
+    }
+
+    const response = outcome
 
     const target = targetOf(response)
     const asserts: AssertResult[] = []
