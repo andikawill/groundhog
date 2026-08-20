@@ -314,7 +314,7 @@ describe('runCase', () => {
     expect(result.status).toBe('failed')
   })
 
-  it('fails a polling step at its deadline rather than starting a fresh timeout', async () => {
+  it('fails the step when the very first attempt outlives its timeout', async () => {
     mock = await startMock({
       'GET /slow': async () => {
         await new Promise((resolve) => setTimeout(resolve, 500))
@@ -324,7 +324,7 @@ describe('runCase', () => {
     const started = Date.now()
     const result = await run(
       {
-        name: 'deadline',
+        name: 'first attempt times out',
         steps: [
           {
             id: 'slow',
@@ -339,6 +339,41 @@ describe('runCase', () => {
       mock.url,
     )
     expect(result.steps[0].status).toBe('failed')
+    expect(result.steps[0].attempts).toBe(1)
     expect(Date.now() - started).toBeLessThan(400)
+  })
+
+  it('shrinks a late retry to the time left instead of granting a fresh timeout', async () => {
+    // Hits 1 and 2 answer instantly, so the retry loop genuinely runs; from hit 3 the
+    // server takes 250ms, which fits inside the nominal 300ms timeout but not inside
+    // what is left of the deadline by then. Clamped, the run ends around 300ms. Without
+    // the clamp, the fourth attempt gets a fresh 300ms budget, completes at ~250ms, and
+    // the run ends around 540ms — which is what this bound separates.
+    mock = await startMock({
+      'GET /job': async (req) => {
+        if (req.hit >= 3) await new Promise((resolve) => setTimeout(resolve, 250))
+        return { body: '{"data":{"status":"pending"}}' }
+      },
+    })
+    const started = Date.now()
+    const result = await run(
+      {
+        name: 'clamp',
+        steps: [
+          {
+            id: 'job',
+            method: 'GET',
+            url: '{{env.API}}/job',
+            retryUntil: '$.data.status == "done"',
+            every: '10ms',
+            timeout: '300ms',
+          },
+        ],
+      },
+      mock.url,
+    )
+    expect(result.steps[0].status).toBe('failed')
+    expect(result.steps[0].attempts).toBeGreaterThan(2)
+    expect(Date.now() - started).toBeLessThan(430)
   })
 })

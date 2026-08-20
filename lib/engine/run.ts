@@ -184,6 +184,8 @@ export async function runCase(options: RunOptions): Promise<RunResult> {
       if ('expr' in item) asserts.push(evalExpr(item.expr, target, resolver))
     }
 
+    // Built here rather than reused from the error branch above: extract may have just
+    // added a secret named in case.redact, and it has to mask this step's own response.
     const redact = makeRedactor(secretValues)
     finish({
       ...base,
