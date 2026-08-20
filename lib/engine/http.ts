@@ -96,7 +96,6 @@ function cutAtCharBoundary(buffer: Buffer, limit: number): Buffer {
 }
 
 export async function send(request: SentRequest, timeoutMs: number): Promise<RawResponse> {
-  const started = Date.now()
   const body =
     request.multipart ?? request.bodyBytes ?? request.body ?? undefined
 
@@ -124,6 +123,5 @@ export async function send(request: SentRequest, timeoutMs: number): Promise<Raw
     headers,
     text,
     truncated,
-    durationMs: Date.now() - started,
   }
 }
