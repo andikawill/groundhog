@@ -13,12 +13,19 @@ export function redactRequest(
 ): SentRequest {
   const headers: Record<string, string> = {}
   for (const [key, value] of Object.entries(request.headers)) headers[key] = redact(value)
+
   return {
-    ...request,
+    method: request.method,
     url: redact(request.url),
     headers,
-    body: request.body === undefined ? undefined : redact(request.body),
-    multipart: undefined,
+    body:
+      request.body !== undefined
+        ? redact(request.body)
+        : request.bodyBytes !== undefined
+          ? `<binary, ${request.bodyBytes.byteLength} bytes>`
+          : request.multipart !== undefined
+            ? '<multipart form>'
+            : undefined,
   }
 }
 
