@@ -46,6 +46,7 @@ export type SentRequest = {
   headers: Record<string, string>
   body?: string
   bodyBytes?: Uint8Array
+  multipart?: FormData
 }
 
 export type RawResponse = {
