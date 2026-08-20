@@ -1,5 +1,7 @@
 const FIRST = ['aisyah', 'budi', 'chandra', 'dewi', 'farah', 'gilang', 'hana', 'iqbal']
 const LAST = ['pratama', 'wijaya', 'santoso', 'rahman', 'lestari', 'kusuma']
+const UPPER = 'ABCDEFGHIJKLMNOPQRSTUVWXYZ'
+const ALNUM = 'abcdefghijklmnopqrstuvwxyz0123456789'
 
 function hashSeed(seed: string): number {
   let h = 1779033703 ^ seed.length
@@ -78,6 +80,23 @@ export function generate(spec: string, rng: () => number, nowMs: number): string
       return isoDay(rng, Number(args[0] ?? 7), nowMs)
     case 'pick':
       return pick((args[0] ?? '').split('|'))
+    case 'format': {
+      const mask = stripQuotes(raw ?? '')
+      let out = ''
+      for (let i = 0; i < mask.length; i++) {
+        const ch = mask[i]
+        if (ch === '\\' && i + 1 < mask.length) {
+          out += mask[++i]
+          continue
+        }
+        if (ch === '#') out += digits(rng, 1)
+        else if (ch === 'A') out += UPPER[Math.floor(rng() * UPPER.length)]
+        else if (ch === 'a') out += ALNUM[Math.floor(rng() * 26)]
+        else if (ch === '*') out += ALNUM[Math.floor(rng() * ALNUM.length)]
+        else out += ch
+      }
+      return out
+    }
     default:
       throw new Error(`unknown generator: ${kind}`)
   }

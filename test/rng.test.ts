@@ -67,4 +67,29 @@ describe('generate', () => {
   it('rejects an unknown generator by name', () => {
     expect(() => generate('nope', makeRng('s6'), NOW)).toThrow(/unknown generator: nope/)
   })
+
+  it('fills a format mask by character class', () => {
+    const value = generate('format(01########)', makeRng('f1'), NOW)
+    expect(value).toMatch(/^01\d{8}$/)
+  })
+
+  it('fills letters and alphanumerics in a mask', () => {
+    expect(generate('format(AAA-###)', makeRng('f2'), NOW)).toMatch(/^[A-Z]{3}-\d{3}$/)
+    expect(generate('format(aa)', makeRng('f3'), NOW)).toMatch(/^[a-z]{2}$/)
+    expect(generate('format(**)', makeRng('f4'), NOW)).toMatch(/^[a-z0-9]{2}$/)
+  })
+
+  it('passes unrecognised mask characters through untouched', () => {
+    expect(generate('format(IC:###/##)', makeRng('f5'), NOW)).toMatch(/^IC:\d{3}\/\d{2}$/)
+  })
+
+  it('emits a mask character literally when escaped', () => {
+    expect(generate('format(\\#\\A#)', makeRng('f6'), NOW)).toMatch(/^#A\d$/)
+  })
+
+  it('is deterministic for the same seed', () => {
+    expect(generate('format(####)', makeRng('f7'), NOW)).toBe(
+      generate('format(####)', makeRng('f7'), NOW),
+    )
+  })
 })

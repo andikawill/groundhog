@@ -5,6 +5,7 @@ import { readPath } from './path'
 export type Resolver = {
   env: Record<string, string>
   ctx: Record<string, unknown>
+  pools: Record<string, string[]>
   rng: () => number
   autoCache: Map<string, unknown>
   assetsDir: string
@@ -18,18 +19,20 @@ export class MissingRefError extends Error {
   }
 }
 
-const TOKEN = /\{\{\s*(env|ctx|auto|asset)\.(.+?)\s*\}\}/g
-const WHOLE = /^\{\{\s*(env|ctx|auto|asset)\.(.+?)\s*\}\}$/
+const TOKEN = /\{\{\s*(env|ctx|auto|pool|asset)\.(.+?)\s*\}\}/g
+const WHOLE = /^\{\{\s*(env|ctx|auto|pool|asset)\.(.+?)\s*\}\}$/
 
 export function makeResolver(input: {
   env: Record<string, string>
   seed: string
   assetsDir: string
   nowMs: number
+  pools?: Record<string, string[]>
 }): Resolver {
   return {
     env: input.env,
     ctx: {},
+    pools: input.pools ?? {},
     rng: makeRng(input.seed),
     autoCache: new Map(),
     assetsDir: input.assetsDir,
@@ -57,10 +60,18 @@ function resolveToken(namespace: string, rest: string, r: Resolver): unknown {
   const produced =
     namespace === 'auto'
       ? generate(rest.split('#')[0], r.rng, r.nowMs)
-      : pickAsset(rest, r)
+      : namespace === 'pool'
+        ? pickPool(rest, r)
+        : pickAsset(rest, r)
 
   r.autoCache.set(cacheKey, produced)
   return produced
+}
+
+function pickPool(name: string, r: Resolver): string {
+  const list = r.pools[name]
+  if (!list || list.length === 0) throw new MissingRefError(`pool.${name}`)
+  return list[Math.floor(r.rng() * list.length)]
 }
 
 function pickAsset(rest: string, r: Resolver): string {
