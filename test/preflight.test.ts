@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest'
-import { makeRedactor, redactRequest } from '../lib/engine/redact'
+import { makeRedactor, redactRequest, redactResponse } from '../lib/engine/redact'
 import { preflight, resolveEnv } from '../lib/engine/preflight'
 import type { EnvDef, TestCase } from '../lib/engine/types'
 
@@ -124,5 +124,46 @@ describe('makeRedactor', () => {
     )
     expect(redacted.headers.authorization).toBe('Bearer ***')
     expect(redacted.body).toBe('{"t":"***"}')
+  })
+
+  it('redacts response headers and text, preserving status and truncated', () => {
+    const redacted = redactResponse(
+      {
+        status: 200,
+        headers: { 'x-echo': 'tok_secret_value' },
+        text: '{"token":"tok_secret_value"}',
+        truncated: true,
+      },
+      makeRedactor(['tok_secret_value']),
+    )
+    expect(redacted.headers['x-echo']).toBe('***')
+    expect(redacted.text).toBe('{"token":"***"}')
+    expect(redacted.status).toBe(200)
+    expect(redacted.truncated).toBe(true)
+  })
+
+  it('never passes a binary body through to the record', () => {
+    const redacted = redactRequest(
+      {
+        method: 'PUT',
+        url: 'https://x.test/upload',
+        headers: {},
+        bodyBytes: new TextEncoder().encode('secret file contents'),
+      },
+      makeRedactor(['tok_secret_value']),
+    )
+    expect(redacted.body).toBe('<binary, 20 bytes>')
+    expect(JSON.stringify(redacted)).not.toContain('secret file contents')
+  })
+
+  it('summarises a multipart body instead of storing it', () => {
+    const form = new FormData()
+    form.set('caption', 'lunch')
+    const redacted = redactRequest(
+      { method: 'POST', url: 'https://x.test/form', headers: {}, multipart: form },
+      makeRedactor([]),
+    )
+    expect(redacted.body).toBe('<multipart form>')
+    expect(redacted.multipart).toBeUndefined()
   })
 })
