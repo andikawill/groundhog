@@ -13,14 +13,13 @@ Describe an API test cycle once. Replay it byte for byte, forever.
 
 ## Status
 
-Early development. **Not usable yet** — the pieces below are being built in
-order, and only the test suite runs today.
+Early development. The engine and its CLI work; there is no UI yet.
 
 | stage | state |
 |---|---|
 | Seeded generation, path reading, template resolution | done |
-| Assertions, HTTP, run orchestration | in progress |
-| CLI runner | not started |
+| Assertions, HTTP, run orchestration | done |
+| CLI runner | done |
 | Persistence and web UI | not started |
 | Natural-language authoring, semantic assertions | not started |
 
@@ -30,6 +29,21 @@ Requires Node 20.19 or newer.
 npm install
 npm test
 ```
+
+Run a case:
+
+```bash
+npm run run-case -- --case examples/food-journal.case.json --env examples/staging.env.json
+```
+
+Replay a previous run exactly — copy the seed and anchor the CLI printed:
+
+```bash
+npm run run-case -- --case examples/food-journal.case.json --env examples/staging.env.json --seed abc123 --anchor 2026-08-20T00:00:00.000Z
+```
+
+`--seed` reproduces every `{{auto.*}}` value; `--anchor` reproduces every generated date.
+Both are needed for an identical payload.
 
 ## Before
 
