@@ -82,6 +82,26 @@ describe('buildRequest', () => {
     expect(request.headers['content-type']).toBe('application/x-www-form-urlencoded')
   })
 
+  it('builds a multipart body with a text field and a file part', () => {
+    const request = buildRequest(
+      {
+        ...base,
+        body: {
+          type: 'multipart',
+          value: { caption: 'lunch {{env.TOKEN}}', photo: { file: 'meals/a.jpg' } },
+        },
+      },
+      resolver(),
+    )
+    expect(request.multipart).toBeInstanceOf(FormData)
+    expect(request.multipart?.get('caption')).toBe('lunch tok_123')
+    const photo = request.multipart?.get('photo')
+    expect(photo).toBeInstanceOf(Blob)
+    expect((photo as File).name).toBe('a.jpg')
+    expect(request.body).toBeUndefined()
+    expect(request.headers['content-type']).toBeUndefined()
+  })
+
   it('sends a raw body with its declared content type', () => {
     const request = buildRequest(
       { ...base, body: { type: 'raw', value: '<x>{{env.TOKEN}}</x>', contentType: 'application/xml' } },
