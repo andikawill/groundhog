@@ -1,7 +1,8 @@
 const FIRST = ['aisyah', 'budi', 'chandra', 'dewi', 'farah', 'gilang', 'hana', 'iqbal']
 const LAST = ['pratama', 'wijaya', 'santoso', 'rahman', 'lestari', 'kusuma']
 const UPPER = 'ABCDEFGHIJKLMNOPQRSTUVWXYZ'
-const ALNUM = 'abcdefghijklmnopqrstuvwxyz0123456789'
+const LOWER = 'abcdefghijklmnopqrstuvwxyz'
+const ALNUM = LOWER + '0123456789'
 
 function hashSeed(seed: string): number {
   let h = 1779033703 ^ seed.length
@@ -91,7 +92,7 @@ export function generate(spec: string, rng: () => number, nowMs: number): string
         }
         if (ch === '#') out += digits(rng, 1)
         else if (ch === 'A') out += UPPER[Math.floor(rng() * UPPER.length)]
-        else if (ch === 'a') out += ALNUM[Math.floor(rng() * 26)]
+        else if (ch === 'a') out += LOWER[Math.floor(rng() * LOWER.length)]
         else if (ch === '*') out += ALNUM[Math.floor(rng() * ALNUM.length)]
         else out += ch
       }
