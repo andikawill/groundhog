@@ -2,6 +2,7 @@ import { afterEach, describe, expect, it } from 'vitest'
 import { send, traceOf } from '../lib/engine/http'
 import { startMock, type MockHandle } from './mock-server'
 import { MAX_BODY_BYTES } from '../lib/engine/types'
+import { Buffer } from 'node:buffer'
 
 let mock: MockHandle
 
@@ -86,6 +87,54 @@ describe('send', () => {
     mock = await startMock({ 'GET /t': () => ({ body: '{}' }) })
     const response = await send({ method: 'GET', url: `${mock.url}/t`, headers: {} }, 5000)
     expect(response.durationMs).toBeGreaterThanOrEqual(0)
+  })
+
+  it('measures truncation in bytes, not UTF-16 code units', async () => {
+    const oversized = '中'.repeat(MAX_BODY_BYTES)
+    mock = await startMock({ 'GET /cjk': () => ({ body: oversized }) })
+    const response = await send({ method: 'GET', url: `${mock.url}/cjk`, headers: {} }, 15000)
+    expect(response.truncated).toBe(true)
+    expect(Buffer.byteLength(response.text, 'utf8')).toBeLessThanOrEqual(MAX_BODY_BYTES)
+    expect(response.text).not.toMatch(/[\uD800-\uDFFF]/)
+    expect(response.text.endsWith('中')).toBe(true)
+  })
+
+  it('lets fetch supply the multipart boundary, discarding a caller-set content-type', async () => {
+    let seenType = ''
+    let seenBody = ''
+    mock = await startMock({
+      'POST /form': (req) => {
+        seenType = req.headers['content-type'] ?? ''
+        seenBody = req.body
+        return { body: '{}' }
+      },
+    })
+    const form = new FormData()
+    form.set('caption', 'lunch')
+    await send(
+      {
+        method: 'POST',
+        url: `${mock.url}/form`,
+        headers: { 'content-type': 'text/plain' },
+        multipart: form,
+      },
+      5000,
+    )
+    expect(seenType).toMatch(/^multipart\/form-data; boundary=/)
+    expect(seenBody).toContain('name="caption"')
+    expect(seenBody).toContain('lunch')
+  })
+
+  it('aborts a request that outlives its timeout', async () => {
+    mock = await startMock({
+      'GET /slow': async () => {
+        await new Promise((resolve) => setTimeout(resolve, 300))
+        return { body: '{}' }
+      },
+    })
+    await expect(
+      send({ method: 'GET', url: `${mock.url}/slow`, headers: {} }, 60),
+    ).rejects.toThrow()
   })
 })
 
