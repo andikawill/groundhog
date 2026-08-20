@@ -199,4 +199,12 @@ describe('the #n disambiguator', () => {
     const r = resolver()
     expect(renderString('{{asset.pick(meals/)#2}}', r)).toMatch(/^meals\/[ab]\.jpg$/)
   })
+
+  it('keeps the bare token memoised alongside its #n sibling', () => {
+    const pools = { dish: ['a', 'b', 'c', 'd', 'e', 'f', 'g', 'h'] }
+    const r = resolver({ pools })
+    const first = renderString('{{pool.dish}}', r)
+    renderString('{{pool.dish#2}}', r)
+    expect(renderString('{{pool.dish}}', r)).toBe(first)
+  })
 })

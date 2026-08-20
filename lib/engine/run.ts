@@ -5,18 +5,24 @@ import { makeRedactor, redactRequest, redactResponse } from './redact'
 import { MissingRefError, makeResolver } from './template'
 import type { AssertResult, RawResponse, RunStep, Step, StepStatus, TestCase } from './types'
 
-function stringLeaves(value: unknown, out: string[]): void {
-  if (typeof value === 'string') {
-    out.push(value)
+function collectSecrets(value: unknown, out: string[]): void {
+  if (value === null || value === undefined) return
+  if (typeof value === 'object') {
+    for (const item of Array.isArray(value) ? value : Object.values(value)) {
+      collectSecrets(item, out)
+    }
     return
   }
-  if (Array.isArray(value)) {
-    for (const item of value) stringLeaves(item, out)
-    return
+  out.push(String(value))
+}
+
+function causeMessages(error: Error): string[] {
+  const cause = error.cause as (Error & { errors?: Error[] }) | undefined
+  if (!cause) return []
+  if (Array.isArray(cause.errors)) {
+    return [...new Set(cause.errors.map((e) => e.message).filter(Boolean))]
   }
-  if (value !== null && typeof value === 'object') {
-    for (const item of Object.values(value)) stringLeaves(item, out)
-  }
+  return cause.message ? [cause.message] : []
 }
 
 export class PreflightError extends Error {
@@ -175,9 +181,7 @@ export async function runCase(options: RunOptions): Promise<RunResult> {
       finish({
         ...base,
         status: 'failed',
-        reason: [outcome.message, (outcome.cause as Error | undefined)?.message]
-          .filter(Boolean)
-          .join(': '),
+        reason: [outcome.message, ...causeMessages(outcome)].filter(Boolean).join(': '),
         request: redactRequest(request, makeRedactor(secretValues)),
         attempts,
         durationMs: Date.now() - sentAt,
@@ -197,7 +201,7 @@ export async function runCase(options: RunOptions): Promise<RunResult> {
         continue
       }
       resolver.ctx[name] = value
-      if ((options.case.redact ?? []).includes(name)) stringLeaves(value, secretValues)
+      if ((options.case.redact ?? []).includes(name)) collectSecrets(value, secretValues)
     }
 
     if (step.retryUntil) {
@@ -215,11 +219,8 @@ export async function runCase(options: RunOptions): Promise<RunResult> {
       ...base,
       status: asserts.every((a) => a.ok) ? 'passed' : 'failed',
       request: redactRequest(request, redact),
-      response: redactResponse(
-        { status: response.status, headers: response.headers, text: response.text, truncated: response.truncated },
-        redact,
-      ),
-      asserts,
+      response: redactResponse(response, redact),
+      asserts: asserts.map((a) => (a.detail ? { ...a, detail: redact(a.detail) } : a)),
       attempts,
       trace: traceOf(response.headers),
       durationMs: Date.now() - sentAt,
@@ -230,7 +231,9 @@ export async function runCase(options: RunOptions): Promise<RunResult> {
   const unresolved = steps.some(
     (s) => s.status === 'skipped' && s.reason?.startsWith('unresolved'),
   )
-  const ranSomething = steps.some((s) => s.status === 'passed')
+  const allUserSkipped =
+    steps.length > 0 && steps.every((s) => s.reason === 'skipped by user')
+  const ranSomething = steps.some((s) => s.status === 'passed') || allUserSkipped
 
   return {
     status: failed || unresolved || !ranSomething ? 'failed' : 'passed',
