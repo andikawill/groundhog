@@ -20,6 +20,14 @@ describe('readAsset', () => {
     expect(() => readAsset(DIR, '/etc/hosts')).toThrow(AssetPathError)
   })
 
+  it('rejects a sibling directory whose name merely starts with the root name', () => {
+    expect(() => readAsset(DIR, '../assetsX/leak.txt')).toThrow(AssetPathError)
+  })
+
+  it('keeps a path that climbs out and back in below the root', () => {
+    expect(new TextDecoder().decode(readAsset(DIR, 'meals/../meals/b.jpg'))).toBe('b')
+  })
+
   it('names the requested path on the error', () => {
     try {
       readAsset(DIR, '../secret')
@@ -37,5 +45,9 @@ describe('listAssets', () => {
 
   it('rejects a folder outside the assets directory', () => {
     expect(() => listAssets(DIR, '../..')).toThrow(AssetPathError)
+  })
+
+  it('allows the assets root itself', () => {
+    expect(listAssets(DIR, '')).toContain('meals')
   })
 })
