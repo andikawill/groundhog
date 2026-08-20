@@ -82,6 +82,7 @@
       "title": "Hapus journal test",
       "method": "DELETE",
       "url": "{{env.API}}/v1/food-journal/{{ctx.journalId}}",
+      "needs": ["save"],
       "always": true
     }
   ]
