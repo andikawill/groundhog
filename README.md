@@ -1,24 +1,69 @@
+<div align="center">
+
 # groundhog
 
-Describe an API test cycle once. Replay it as many times as you like.
+**It wakes up. It runs the same day again. It never complains.**
 
-Named after the film: you wake up and live the exact same day over again. That
-is manual API testing.
+Describe an API test cycle once. Replay it byte for byte, forever.
 
-## The problem
+</div>
 
-Testing a feature by hand means walking the same sequence every time. Log in.
-Ask for an upload URL. Push the file. Wait for the job to finish. Save the
-record. Check it came back. Check the notification fired.
+> Named after the film, where a man lives the same day over and over until he
+> gets it right. That is manual API testing. He at least got to learn piano.
 
-Six requests, each one feeding the next. Do it again tomorrow and you retype
-every payload, invent a fresh email because the last one is taken, and copy an
-id out of one response into the next by hand. Then a test fails and you cannot
-reproduce it, because you no longer know which values you used.
+## Status
 
-## The idea
+Early development. **Not usable yet** — the pieces below are being built in
+order, and only the test suite runs today.
 
-Write the cycle down once, as data:
+| stage | state |
+|---|---|
+| Seeded generation, path reading, template resolution | done |
+| Assertions, HTTP, run orchestration | in progress |
+| CLI runner | not started |
+| Persistence and web UI | not started |
+| Natural-language authoring, semantic assertions | not started |
+
+Requires Node 20.19 or newer.
+
+```bash
+npm install
+npm test
+```
+
+## Before
+
+Testing one feature by hand, for the fourth time this week:
+
+1. Log in. Copy the token out of the response.
+2. Ask for a presigned upload URL. Paste the token. Send. Copy `uploadUrl` and `key`.
+3. `PUT` the file to `uploadUrl`. Send.
+4. `GET` the classification. Pending. Send again. Pending. Send again. Done.
+5. `POST` the journal entry. Paste `key`. Paste the classification items — no, not as a string, it has to stay an array. Send. Copy the id.
+6. `GET` the entry back. Paste the id. Read it.
+7. Tomorrow, all of it again, with a new email, because the last one is taken.
+
+Then something fails and you cannot reproduce it, because you no longer know
+which values you used.
+
+## After
+
+```bash
+npm run run-case -- --case food-journal.case.json --env staging.env.json
+```
+
+Same six requests. Fresh values, generated from a seed. When it fails, the seed
+and time anchor are printed, and re-running with both sends the identical
+payloads:
+
+```bash
+npm run run-case -- --case food-journal.case.json --env staging.env.json \
+  --seed 8f2a1c --anchor 2026-08-20T00:00:00.000Z
+```
+
+## How it works
+
+A case is a list of steps. A step is a request you declare in full:
 
 ```json
 {
@@ -35,9 +80,7 @@ Write the cycle down once, as data:
 }
 ```
 
-Then run it. Every `{{auto.*}}` value is generated from the run's seed, so a
-replay with that seed sends byte-identical payloads. Every `extract` puts a
-value into `ctx`, so the next step can use it:
+`extract` puts values into `ctx`. The next step reads them:
 
 ```json
 {
@@ -49,58 +92,69 @@ value into `ctx`, so the next step can use it:
 }
 ```
 
-## Rules worth knowing up front
+Four namespaces fill the tokens: `{{env.*}}` from the selected environment,
+`{{ctx.*}}` from earlier responses, `{{auto.*}}` generated from the run's seed,
+`{{asset.*}}` picked from a folder of files.
+
+## Four rules, and the bug each one prevents
 
 **Literal by default.** What you write is what gets sent. Only `{{...}}` tokens
-are generated. There is no field the tool fills in behind your back.
+are generated, and the tool never invents a step you did not declare. *Prevents:
+debugging a request you did not write.*
 
-**The tool does not invent steps.** You declare the method, URL, headers, and
-payload. It fills in the values you marked and nothing else.
+**One token, one value.** `{{auto.email}}` in step 1 and step 5 is the same
+email. Need a second: `{{auto.email#2}}`. *Prevents: a login step and a lookup
+step silently disagreeing about which user they mean.*
 
-**Same token, same value.** `{{auto.email}}` in step 1 and step 5 is one email,
-not two. Need a second: `{{auto.email#2}}`.
-
-**A token that fills a whole field keeps its type.** An extracted array is sent
-as an array. Embedded in a longer string, it is stringified. Without that rule,
-passing a result between steps quietly sends an array as a quoted string and the
-API rejects it — a tool bug that reads like a product bug.
+**A whole-field token keeps its type.** An extracted array injected as an entire
+field stays an array; embedded inside a longer string it is stringified.
+*Prevents: sending `"[{...}]"` where the API wants `[{...}]`, then filing a bug
+against the API.*
 
 **An unresolved reference stops the step.** A step whose `{{ctx.journalId}}` was
-never set is skipped, and the report names the missing reference. It is never
-rendered as an empty string, because `DELETE /items/{{ctx.id}}` with no id is a
-request against the collection.
-
-## Status
-
-Early development. Nothing here is usable yet beyond the test suite.
-
-| stage | state |
-|---|---|
-| Engine — generation, path reading, template resolution | in progress |
-| Engine — assertions, HTTP, orchestration | not started |
-| CLI runner | not started |
-| Persistence and web UI | not started |
-| Natural-language authoring, semantic assertions | not started |
-
-```bash
-npm install
-npm test
-```
+never set is skipped, and the report names the missing reference. *Prevents:
+`DELETE /items/{{ctx.id}}` rendering as `DELETE /items/` — a request against the
+whole collection.*
 
 ## Design constraints
 
-- **No runtime dependencies.** `fetch`, `FormData`, `AbortSignal.timeout`, and
-  `node:http` cover what this needs. A path reader and a seeded generator are a
-  few dozen lines each, which is cheaper than the packages that do them.
-- **The engine reads no clock.** Generated dates derive from a time anchor
-  passed in with the seed. A wall-clock read would make replay produce different
-  payloads from the same seed.
-- **Secrets are redacted before storage,** not before display. Redacting at
-  render time means the real token has already reached the database and every
-  export made from it.
+**No runtime dependencies.** `fetch`, `FormData`, `AbortSignal.timeout`, and
+`node:http` cover what this needs. A path reader and a seeded generator are a
+few dozen lines each — cheaper to own than to import.
 
-Requires Node 20.19 or newer.
+**The engine reads no clock.** Generated dates derive from a time anchor stored
+with the seed. A wall-clock read would make the same seed produce different
+payloads, which is most of the point gone.
+
+**Secrets are redacted before storage, not before display.** Redacting at render
+time means the real token already reached the database, and every export made
+from it.
+
+## FAQ
+
+**How is this different from Postman or Newman?**
+Newman replays a collection you already built. The difference here is what
+happens to the values: they are generated per run from a seed, they flow between
+steps by name, and a failed run hands you the seed that reproduces it exactly.
+That, and steps can pause for you to look before continuing.
+
+**Why not just write integration tests?**
+Write those too. These are the cycles you run against a live environment while
+building or verifying a feature — the ones that currently live in a browser tab
+and your short-term memory.
+
+**Why generate values instead of using fixtures?**
+Because the fixture is already registered. Half of manual API testing is
+inventing a new email.
+
+**Why no dependencies?**
+Everything imported is a thing to upgrade, audit, and be broken by. The two
+libraries this would otherwise need are each about thirty lines.
+
+**Why "groundhog"?**
+See above. The alternative was naming it after the thing it does, which would
+have been accurate and forgettable.
 
 ## License
 
-MIT
+MIT. The shortest one that works.
