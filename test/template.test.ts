@@ -9,14 +9,20 @@ import {
 
 const NOW = Date.parse('2026-08-20T00:00:00.000Z')
 
-function resolver(overrides: Partial<{ env: Record<string, string>; seed: string }> = {}) {
-  const r = makeResolver({
+function resolver(
+  overrides: Partial<{
+    env: Record<string, string>
+    seed: string
+    pools: Record<string, string[]>
+  }> = {},
+) {
+  return makeResolver({
     env: overrides.env ?? { API: 'https://api.test', TOKEN: 'tok_123' },
     seed: overrides.seed ?? 'seed-1',
     assetsDir: 'test/assets',
     nowMs: NOW,
+    pools: overrides.pools,
   })
-  return r
 }
 
 describe('renderString', () => {
@@ -130,5 +136,51 @@ describe('collectEnvRefs', () => {
       body: { nested: ['{{env.API}}', '{{ctx.other}}'] },
     })
     expect(refs.sort()).toEqual(['API', 'TOKEN'])
+  })
+})
+
+describe('pool', () => {
+  const pools = { mealName: ['nasi lemak', 'roti canai', 'char kway teow'] }
+
+  it('picks a value from the named pool', () => {
+    expect(pools.mealName).toContain(renderString('{{pool.mealName}}', resolver({ pools })))
+  })
+
+  it('gives the same value for the same token twice in one run', () => {
+    const r = resolver({ pools })
+    expect(renderString('{{pool.mealName}}', r)).toBe(renderString('{{pool.mealName}}', r))
+  })
+
+  it('gives the same value across two resolvers built from the same seed', () => {
+    expect(renderString('{{pool.mealName}}', resolver({ pools }))).toBe(
+      renderString('{{pool.mealName}}', resolver({ pools })),
+    )
+  })
+
+  it('throws MissingRefError naming an absent pool', () => {
+    try {
+      renderString('{{pool.nope}}', resolver({ pools }))
+      throw new Error('should have thrown')
+    } catch (error) {
+      expect(error).toBeInstanceOf(MissingRefError)
+      expect((error as MissingRefError).ref).toBe('pool.nope')
+    }
+  })
+
+  it('throws MissingRefError for an empty pool', () => {
+    try {
+      renderString('{{pool.empty}}', resolver({ pools: { empty: [] } }))
+      throw new Error('should have thrown')
+    } catch (error) {
+      expect((error as MissingRefError).ref).toBe('pool.empty')
+    }
+  })
+
+  it('keeps the whole-field type rule', () => {
+    const out = renderValue({ dish: '{{pool.mealName}}' }, resolver({ pools })) as {
+      dish: string
+    }
+    expect(typeof out.dish).toBe('string')
+    expect(pools.mealName).toContain(out.dish)
   })
 })
