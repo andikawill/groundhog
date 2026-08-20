@@ -19,12 +19,12 @@ export function redactRequest(
     url: redact(request.url),
     headers,
     body:
-      request.body !== undefined
-        ? redact(request.body)
+      request.multipart !== undefined
+        ? '<multipart form>'
         : request.bodyBytes !== undefined
           ? `<binary, ${request.bodyBytes.byteLength} bytes>`
-          : request.multipart !== undefined
-            ? '<multipart form>'
+          : request.body !== undefined
+            ? redact(request.body)
             : undefined,
   }
 }
@@ -35,5 +35,10 @@ export function redactResponse(
 ): Omit<RawResponse, 'durationMs'> {
   const headers: Record<string, string> = {}
   for (const [key, value] of Object.entries(response.headers)) headers[key] = redact(value)
-  return { ...response, headers, text: redact(response.text) }
+  return {
+    status: response.status,
+    headers,
+    text: redact(response.text),
+    truncated: response.truncated,
+  }
 }
