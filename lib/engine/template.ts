@@ -1,12 +1,12 @@
 import { listAssets } from './assets'
-import { generate, makeRng } from './rng'
+import { generate, makeRng, type Rng } from './rng'
 import { readPath } from './path'
 
 export type Resolver = {
   env: Record<string, string>
   ctx: Record<string, unknown>
   pools: Record<string, string[]>
-  rng: () => number
+  rng: Rng
   autoCache: Map<string, unknown>
   assetsDir: string
   nowMs: number
@@ -60,7 +60,7 @@ function resolveToken(namespace: string, rest: string, r: Resolver): unknown {
   const name = rest.split('#')[0]
   const produced =
     namespace === 'auto'
-      ? generate(name, r.rng, r.nowMs)
+      ? generate(name, r.rng.next, r.nowMs)
       : namespace === 'pool'
         ? pickPool(name, r)
         : pickAsset(name, r)
@@ -72,7 +72,7 @@ function resolveToken(namespace: string, rest: string, r: Resolver): unknown {
 function pickPool(name: string, r: Resolver): string {
   const list = r.pools[name]
   if (!list || list.length === 0) throw new MissingRefError(`pool.${name}`)
-  return list[Math.floor(r.rng() * list.length)]
+  return list[Math.floor(r.rng.next() * list.length)]
 }
 
 function pickAsset(rest: string, r: Resolver): string {
@@ -81,7 +81,7 @@ function pickAsset(rest: string, r: Resolver): string {
   const folder = match[1].replace(/^['"]|['"]$/g, '').replace(/\/$/, '')
   const files = listAssets(r.assetsDir, folder)
   if (files.length === 0) throw new MissingRefError(`asset.${rest}`)
-  return `${folder}/${files[Math.floor(r.rng() * files.length)]}`
+  return `${folder}/${files[Math.floor(r.rng.next() * files.length)]}`
 }
 
 export function renderString(input: string, r: Resolver): string {
