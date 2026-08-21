@@ -2,7 +2,7 @@ import { readFileSync } from 'node:fs'
 import { parseArgs } from 'node:util'
 import { createInterface } from 'node:readline/promises'
 import { PreflightError, resolveEnv, runCase } from '../lib/engine/index'
-import type { EnvDef, TestCase } from '../lib/engine/index'
+import type { EnvDef, RunStep, TestCase } from '../lib/engine/index'
 
 const { values } = parseArgs({
   options: {
@@ -47,25 +47,36 @@ if (Number.isNaN(anchorAt)) {
 const rl = createInterface({ input: process.stdin, output: process.stdout })
 
 try {
-  const result = await runCase({
+  const common = {
     case: testCase,
     env: resolveEnv(shared, active),
     seed,
     anchorAt,
     assetsDir: values.assets!,
     confirmed: values.yes,
-    onPause: async (stepId) => {
-      const answer = await rl.question(`paused at "${stepId}" — [c]ontinue or [s]kip? `)
-      return answer.trim().toLowerCase().startsWith('s') ? 'skip' : 'continue'
-    },
-    onStep: (step) => {
+    onStep: (step: RunStep) => {
       const mark = step.status === 'passed' ? 'ok  ' : step.status === 'failed' ? 'FAIL' : 'skip'
       const failed = step.asserts.filter((a) => !a.ok)
       console.log(`${mark} ${step.id} (${step.durationMs}ms, ${step.attempts} attempt(s))`)
       for (const item of failed) console.log(`       ${item.expr} — ${item.detail ?? ''}`)
       if (step.reason) console.log(`       ${step.reason}`)
     },
-  })
+  }
+
+  let result = await runCase(common)
+
+  while (result.status === 'awaiting') {
+    const stepId = result.stepsSnapshot[result.state!.stepIndex].id
+    const answer = await rl.question(`paused at "${stepId}" — [c]ontinue or [s]kip? `)
+    result = await runCase({
+      ...common,
+      resumeFrom: {
+        state: result.state!,
+        steps: result.steps,
+        decision: answer.trim().toLowerCase().startsWith('s') ? 'skip' : 'continue',
+      },
+    })
+  }
 
   console.log(`\n${result.status} — seed ${result.seed} anchor ${new Date(result.anchorAt).toISOString()}`)
   console.log('replay: add --seed ' + result.seed + ' --anchor ' + new Date(result.anchorAt).toISOString())

@@ -167,13 +167,21 @@ payloads, which is most of the point gone.
 time means the real token already reached the database, and every export made
 from it.
 
+One exception, stated plainly: a run stopped at a `pause` step has to keep the
+values it extracted — including an access token — or it could not be resumed at
+all. That state is held apart from the run's own record, is never exported or
+logged, and is discarded the moment the run continues or ends. A waiting run
+holds live credentials for as long as it waits.
+
 ## FAQ
 
 **How is this different from Postman or Newman?**
 Newman replays a collection you already built. The difference here is what
 happens to the values: they are generated per run from a seed, they flow between
 steps by name, and a failed run hands you the seed that reproduces it exactly.
-That, and steps can pause for you to look before continuing.
+That, and steps can pause for you to look before continuing — the run stops and
+waits rather than holding a connection open, so a pause can outlast the process
+that started it.
 
 **Why not just write integration tests?**
 Write those too. These are the cycles you run against a live environment while
