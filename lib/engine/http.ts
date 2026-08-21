@@ -14,7 +14,7 @@ export class StepDeclarationError extends Error {
 function lowerHeaders(headers: Record<string, string> | undefined, r: Resolver) {
   const out: Record<string, string> = {}
   for (const [key, value] of Object.entries(headers ?? {})) {
-    out[key.toLowerCase()] = renderString(value, r)
+    out[key.toLowerCase()] = renderString(value, r, `headers.${key.toLowerCase()}`)
   }
   return out
 }
@@ -27,7 +27,7 @@ export function buildRequest(step: Step, r: Resolver): SentRequest {
   const headers = lowerHeaders(step.headers, r)
   const request: SentRequest = {
     method: step.method,
-    url: renderString(step.url, r),
+    url: renderString(step.url, r, 'url'),
     headers,
   }
   if (!step.body) return request
@@ -38,12 +38,12 @@ export function buildRequest(step: Step, r: Resolver): SentRequest {
 
   switch (step.body.type) {
     case 'json': {
-      request.body = JSON.stringify(renderValue(step.body.value, r))
+      request.body = JSON.stringify(renderValue(step.body.value, r, 'body'))
       defaultContentType(headers, 'application/json')
       break
     }
     case 'file': {
-      const path = renderString(step.body.path, r)
+      const path = renderString(step.body.path, r, 'body.file')
       request.bodyBytes = readAsset(r.assetsDir, path)
       defaultContentType(headers, 'application/octet-stream')
       break
@@ -51,7 +51,7 @@ export function buildRequest(step: Step, r: Resolver): SentRequest {
     case 'form': {
       const params = new URLSearchParams()
       for (const [key, value] of Object.entries(step.body.value)) {
-        params.set(key, renderString(value, r))
+        params.set(key, renderString(value, r, `body.${key}`))
       }
       request.body = params.toString()
       defaultContentType(headers, 'application/x-www-form-urlencoded')
@@ -61,9 +61,9 @@ export function buildRequest(step: Step, r: Resolver): SentRequest {
       const form = new FormData()
       for (const [key, value] of Object.entries(step.body.value)) {
         if (typeof value === 'string') {
-          form.set(key, renderString(value, r))
+          form.set(key, renderString(value, r, `body.${key}`))
         } else {
-          const path = renderString(value.file, r)
+          const path = renderString(value.file, r, `body.${key}`)
           const bytes = readAsset(r.assetsDir, path)
           form.set(key, new Blob([bytes]), path.split('/').pop())
         }
@@ -72,7 +72,7 @@ export function buildRequest(step: Step, r: Resolver): SentRequest {
       break
     }
     case 'raw': {
-      request.body = renderString(step.body.value, r)
+      request.body = renderString(step.body.value, r, 'body')
       defaultContentType(headers, step.body.contentType)
       break
     }
