@@ -5,6 +5,7 @@ import {
   makeResolver,
   renderString,
   renderValue,
+  snapshotResolver,
 } from '../lib/engine/template'
 
 const NOW = Date.parse('2026-08-20T00:00:00.000Z')
@@ -206,5 +207,73 @@ describe('the #n disambiguator', () => {
     const first = renderString('{{pool.dish}}', r)
     renderString('{{pool.dish#2}}', r)
     expect(renderString('{{pool.dish}}', r)).toBe(first)
+  })
+})
+
+describe('restore', () => {
+  const base = {
+    env: { API: 'https://api.test', TOKEN: 'tok_123' },
+    seed: 'seed-1',
+    assetsDir: 'test/assets',
+    nowMs: NOW,
+  }
+
+  it('carries memoised values across a rebuild', () => {
+    const first = resolver()
+    const email = renderString('{{auto.email}}', first)
+    const restored = makeResolver({ ...base, restore: snapshotResolver(first) })
+    expect(renderString('{{auto.email}}', restored)).toBe(email)
+  })
+
+  it('continues the rng stream rather than restarting it', () => {
+    const first = resolver()
+    renderString('{{auto.email}}', first)
+    const nextFresh = renderString('{{auto.uuid}}', first)
+
+    const second = resolver()
+    renderString('{{auto.email}}', second)
+    const restored = makeResolver({ ...base, restore: snapshotResolver(second) })
+    expect(renderString('{{auto.uuid}}', restored)).toBe(nextFresh)
+  })
+
+  it('carries ctx across a rebuild', () => {
+    const first = resolver()
+    first.ctx.token = 't_abc'
+    const restored = makeResolver({ ...base, restore: snapshotResolver(first) })
+    expect(renderString('{{ctx.token}}', restored)).toBe('t_abc')
+  })
+})
+
+describe('origins', () => {
+  it('records the token that filled a path', () => {
+    const r = resolver()
+    renderValue({ when: '{{auto.pastDate(7)}}' }, r, 'body')
+    expect(r.origins.get('body.when')).toEqual(['auto.pastDate(7)'])
+  })
+
+  it('records every token in a string that holds more than one', () => {
+    const r = resolver()
+    r.ctx.a = '1'
+    r.ctx.b = '2'
+    renderString('{{ctx.a}}-{{ctx.b}}', r, 'url')
+    expect(r.origins.get('url')).toEqual(['ctx.a', 'ctx.b'])
+  })
+
+  it('records nothing for a literal', () => {
+    const r = resolver()
+    renderValue({ fixed: 'literal' }, r, 'body')
+    expect(r.origins.has('body.fixed')).toBe(false)
+  })
+
+  it('walks into arrays with an indexed path', () => {
+    const r = resolver()
+    renderValue({ items: ['{{auto.uuid}}'] }, r, 'body')
+    expect(r.origins.get('body.items[0]')).toEqual(['auto.uuid'])
+  })
+
+  it('records nothing when no path is supplied', () => {
+    const r = resolver()
+    renderString('{{auto.uuid}}', r)
+    expect(r.origins.size).toBe(0)
   })
 })
