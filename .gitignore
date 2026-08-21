@@ -7,3 +7,12 @@ node_modules/
 /assets/
 .superpowers/
 docs/superpowers/
+
+# agent tooling — local preference, not the project's
+CLAUDE.md
+AGENTS.md
+.cursor/
+.windsurf/
+.clinerules/
+.opencode/
+.github/copilot-instructions.md

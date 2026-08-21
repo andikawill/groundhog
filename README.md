@@ -1,5 +1,7 @@
 <div align="center">
 
+<img src="logo.jpeg" alt="A groundhog holding a clock reading 06:00, ringed by looping arrows" width="520">
+
 # groundhog
 
 **It wakes up. It runs the same day again. It never complains.**
