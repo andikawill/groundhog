@@ -2,7 +2,7 @@ import { evalExpr, readRef, type EvalTarget } from './assert'
 import { StepDeclarationError, buildRequest, send, traceOf } from './http'
 import { preflight, type ResolvedEnv } from './preflight'
 import { makeRedactor, redactRequest, redactResponse } from './redact'
-import { MissingRefError, makeResolver } from './template'
+import { MissingRefError, makeResolver, snapshotResolver } from './template'
 import type { AssertResult, RawResponse, RunStep, Step, StepStatus, TestCase } from './types'
 
 function collectSecrets(value: unknown, out: string[]): void {
@@ -32,6 +32,13 @@ export class PreflightError extends Error {
   }
 }
 
+export type RunState = {
+  stepIndex: number
+  ctx: Record<string, unknown>
+  memo: Record<string, string>
+  rngState: number
+}
+
 export type RunOptions = {
   case: TestCase
   env: ResolvedEnv
@@ -40,15 +47,16 @@ export type RunOptions = {
   assetsDir: string
   confirmed?: boolean
   onStep?: (step: RunStep) => void
-  onPause?: (stepId: string) => Promise<'continue' | 'skip'>
+  resumeFrom?: { state: RunState; steps: RunStep[]; decision: 'continue' | 'skip' }
 }
 
 export type RunResult = {
-  status: 'passed' | 'failed'
+  status: 'passed' | 'failed' | 'awaiting'
   steps: RunStep[]
   stepsSnapshot: Step[]
   seed: string
   anchorAt: number
+  state?: RunState
 }
 
 export function parseDuration(input: string | undefined, fallbackMs: number): number {
@@ -77,6 +85,7 @@ export async function runCase(options: RunOptions): Promise<RunResult> {
   })
   if (errors.length > 0) throw new PreflightError(errors)
 
+  const resume = options.resumeFrom
   const snapshot: Step[] = structuredClone(options.case.steps)
   const resolver = makeResolver({
     env: options.env.vars,
@@ -84,11 +93,18 @@ export async function runCase(options: RunOptions): Promise<RunResult> {
     assetsDir: options.assetsDir,
     nowMs: options.anchorAt,
     pools: options.case.pools,
+    restore: resume
+      ? { ctx: resume.state.ctx, memo: resume.state.memo, rngState: resume.state.rngState }
+      : undefined,
   })
 
   const secretValues = [...options.env.secrets]
+  for (const name of options.case.redact ?? []) {
+    collectSecrets(resolver.ctx[name], secretValues)
+  }
   const statusById = new Map<string, StepStatus>()
-  const steps: RunStep[] = []
+  const steps: RunStep[] = resume ? [...resume.steps] : []
+  for (const prior of steps) statusById.set(prior.id, prior.status)
 
   const finish = (step: RunStep) => {
     statusById.set(step.id, step.status)
@@ -96,7 +112,10 @@ export async function runCase(options: RunOptions): Promise<RunResult> {
     options.onStep?.(step)
   }
 
-  for (const step of snapshot) {
+  const startIndex = resume ? resume.state.stepIndex : 0
+
+  for (let index = startIndex; index < snapshot.length; index++) {
+    const step = snapshot[index]
     const startedAt = Date.now()
     const base = { id: step.id, title: step.title, asserts: [] as AssertResult[], attempts: 0 }
 
@@ -111,16 +130,28 @@ export async function runCase(options: RunOptions): Promise<RunResult> {
       continue
     }
 
-    if (step.delay) await new Promise((r) => setTimeout(r, parseDuration(step.delay, 0)))
+    const resumingThisStep = resume !== undefined && index === startIndex
 
-    if (step.pause && options.onPause) {
-      const decision = await options.onPause(step.id)
-      if (decision === 'skip') {
-        finish({ ...base, status: 'skipped', reason: 'skipped by user', durationMs: 0 })
-        continue
+    if (step.pause && !resumingThisStep) {
+      const { ctx, memo, rngState } = snapshotResolver(resolver)
+      return {
+        status: 'awaiting',
+        steps,
+        stepsSnapshot: snapshot,
+        seed: options.seed,
+        anchorAt: options.anchorAt,
+        state: { stepIndex: index, ctx, memo, rngState },
       }
     }
 
+    if (resumingThisStep && resume?.decision === 'skip') {
+      finish({ ...base, status: 'skipped', reason: 'skipped by user', durationMs: 0 })
+      continue
+    }
+
+    if (step.delay) await new Promise((r) => setTimeout(r, parseDuration(step.delay, 0)))
+
+    resolver.origins.clear()
     let request
     try {
       request = buildRequest(step, resolver)
@@ -131,6 +162,7 @@ export async function runCase(options: RunOptions): Promise<RunResult> {
           status: 'skipped',
           reason: `unresolved ${error.ref}`,
           durationMs: Date.now() - startedAt,
+          origins: Object.fromEntries(resolver.origins),
         })
         continue
       }
@@ -140,6 +172,7 @@ export async function runCase(options: RunOptions): Promise<RunResult> {
           status: 'failed',
           reason: error.message,
           durationMs: Date.now() - startedAt,
+          origins: Object.fromEntries(resolver.origins),
         })
         continue
       }
@@ -148,6 +181,7 @@ export async function runCase(options: RunOptions): Promise<RunResult> {
         status: 'failed',
         reason: error instanceof Error ? error.message : String(error),
         durationMs: Date.now() - startedAt,
+        origins: Object.fromEntries(resolver.origins),
       })
       continue
     }
@@ -185,6 +219,7 @@ export async function runCase(options: RunOptions): Promise<RunResult> {
         request: redactRequest(request, makeRedactor(secretValues)),
         attempts,
         durationMs: Date.now() - sentAt,
+        origins: Object.fromEntries(resolver.origins),
       })
       continue
     }
@@ -224,6 +259,7 @@ export async function runCase(options: RunOptions): Promise<RunResult> {
       attempts,
       trace: traceOf(response.headers),
       durationMs: Date.now() - sentAt,
+      origins: Object.fromEntries(resolver.origins),
     })
   }
 

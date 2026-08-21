@@ -68,6 +68,7 @@ export type RunStep = {
   attempts: number
   durationMs: number
   trace?: Record<string, string>
+  origins?: Record<string, string[]>
 }
 
 export const MAX_BODY_BYTES = 262144

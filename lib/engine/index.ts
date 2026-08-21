@@ -1,6 +1,6 @@
 export * from './types'
 export { runCase, PreflightError } from './run'
-export type { RunOptions, RunResult } from './run'
+export type { RunOptions, RunResult, RunState } from './run'
 export { resolveEnv, preflight } from './preflight'
 export type { ResolvedEnv } from './preflight'
 export { MissingRefError } from './template'

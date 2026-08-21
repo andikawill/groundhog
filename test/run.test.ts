@@ -391,25 +391,6 @@ describe('runCase', () => {
     expect(result.steps[0].status).toBe('passed')
   })
 
-  it('does not spend the request deadline while paused', async () => {
-    mock = await startMock({ 'GET /x': () => ({ body: '{}' }) })
-    const result = await runCase({
-      case: {
-        name: 'pause then request',
-        steps: [{ id: 'x', method: 'GET', url: '{{env.API}}/x', pause: true, timeout: '200ms' }],
-      },
-      env: env(mock.url),
-      seed: 'run-seed',
-      anchorAt: ANCHOR,
-      assetsDir: 'test/assets',
-      onPause: async () => {
-        await new Promise((resolve) => setTimeout(resolve, 300))
-        return 'continue'
-      },
-    })
-    expect(result.steps[0].status).toBe('passed')
-    expect(result.steps[0].durationMs).toBeLessThan(200)
-  })
 
   it('redacts a secret extracted as an object, not just as a string', async () => {
     mock = await startMock({
@@ -577,17 +558,206 @@ describe('runCase', () => {
     expect(result.steps[1].reason).toContain('ECONNREFUSED')
   })
 
-  it('passes a run the operator chose to skip entirely', async () => {
-    mock = await startMock({ 'GET /x': () => ({ body: '{}' }) })
-    const result = await runCase({
-      case: { name: 'all skipped', steps: [{ id: 'x', method: 'GET', url: '{{env.API}}/x', pause: true }] },
+  it('returns awaiting at a pause instead of blocking', async () => {
+    mock = await startMock({ 'GET /a': () => ({ body: '{}' }), 'GET /b': () => ({ body: '{}' }) })
+    const result = await run(
+      {
+        name: 'pause',
+        steps: [
+          { id: 'a', method: 'GET', url: '{{env.API}}/a' },
+          { id: 'b', method: 'GET', url: '{{env.API}}/b', pause: true },
+        ],
+      },
+      mock.url,
+    )
+    expect(result.status).toBe('awaiting')
+    expect(result.state?.stepIndex).toBe(1)
+    expect(result.steps).toHaveLength(1)
+    expect(mock.hits['GET /b']).toBeUndefined()
+  })
+
+  it('resumes from state and finishes the case', async () => {
+    mock = await startMock({ 'GET /a': () => ({ body: '{}' }), 'GET /b': () => ({ body: '{}' }) })
+    const testCase: TestCase = {
+      name: 'pause',
+      steps: [
+        { id: 'a', method: 'GET', url: '{{env.API}}/a' },
+        { id: 'b', method: 'GET', url: '{{env.API}}/b', pause: true },
+      ],
+    }
+    const paused = await run(testCase, mock.url)
+    const done = await runCase({
+      case: testCase,
       env: env(mock.url),
       seed: 'run-seed',
       anchorAt: ANCHOR,
       assetsDir: 'test/assets',
-      onPause: async () => 'skip',
+      resumeFrom: { state: paused.state!, steps: paused.steps, decision: 'continue' },
     })
-    expect(result.steps[0].status).toBe('skipped')
-    expect(result.status).toBe('passed')
+    expect(done.status).toBe('passed')
+    expect(done.steps.map((s) => s.id)).toEqual(['a', 'b'])
+    expect(mock.hits['GET /b']).toBe(1)
+  })
+
+  it('records a skipped step when the resume decision is skip', async () => {
+    mock = await startMock({ 'GET /a': () => ({ body: '{}' }), 'GET /b': () => ({ body: '{}' }) })
+    const testCase: TestCase = {
+      name: 'pause',
+      steps: [
+        { id: 'a', method: 'GET', url: '{{env.API}}/a' },
+        { id: 'b', method: 'GET', url: '{{env.API}}/b', pause: true },
+      ],
+    }
+    const paused = await run(testCase, mock.url)
+    const done = await runCase({
+      case: testCase,
+      env: env(mock.url),
+      seed: 'run-seed',
+      anchorAt: ANCHOR,
+      assetsDir: 'test/assets',
+      resumeFrom: { state: paused.state!, steps: paused.steps, decision: 'skip' },
+    })
+    expect(done.steps[1].status).toBe('skipped')
+    expect(done.steps[1].reason).toBe('skipped by user')
+    expect(done.status).toBe('passed')
+    expect(mock.hits['GET /b']).toBeUndefined()
+  })
+
+  it('keeps needs satisfied across a resume', async () => {
+    mock = await startMock({
+      'POST /login': () => ({ body: '{"data":{"token":"t_abc"}}' }),
+      'GET /me': (req) => ({ body: JSON.stringify({ auth: req.headers.authorization }) }),
+    })
+    const testCase: TestCase = {
+      name: 'chain across pause',
+      steps: [
+        {
+          id: 'login',
+          method: 'POST',
+          url: '{{env.API}}/login',
+          extract: { token: '$.data.token' },
+          assert: [{ expr: 'status == 200' }],
+        },
+        {
+          id: 'me',
+          method: 'GET',
+          url: '{{env.API}}/me',
+          needs: ['login'],
+          pause: true,
+          headers: { Authorization: 'Bearer {{ctx.token}}' },
+          assert: [{ expr: '$.auth == "Bearer t_abc"' }],
+        },
+      ],
+    }
+    const paused = await run(testCase, mock.url)
+    const done = await runCase({
+      case: testCase,
+      env: env(mock.url),
+      seed: 'run-seed',
+      anchorAt: ANCHOR,
+      assetsDir: 'test/assets',
+      resumeFrom: { state: paused.state!, steps: paused.steps, decision: 'continue' },
+    })
+    expect(done.steps[1].status).toBe('passed')
+  })
+
+  it('sends identical payloads whether or not the run was paused', async () => {
+    const bodies: string[] = []
+    const routes = {
+      'POST /a': (req: { body: string }) => {
+        bodies.push(req.body)
+        return { body: '{}' }
+      },
+      'POST /b': (req: { body: string }) => {
+        bodies.push(req.body)
+        return { body: '{}' }
+      },
+    }
+    const straight: TestCase = {
+      name: 'straight',
+      steps: [
+        { id: 'a', method: 'POST', url: '{{env.API}}/a', body: { type: 'json', value: { e: '{{auto.email}}', u: '{{auto.uuid}}' } } },
+        { id: 'b', method: 'POST', url: '{{env.API}}/b', body: { type: 'json', value: { e: '{{auto.email}}', u: '{{auto.uuid#2}}' } } },
+      ],
+    }
+    mock = await startMock(routes)
+    await run(straight, mock.url)
+    const uninterrupted = [...bodies]
+    bodies.length = 0
+
+    const paused: TestCase = { ...straight, steps: [straight.steps[0], { ...straight.steps[1], pause: true }] }
+    const stopped = await run(paused, mock.url)
+    await runCase({
+      case: paused,
+      env: env(mock.url),
+      seed: 'run-seed',
+      anchorAt: ANCHOR,
+      assetsDir: 'test/assets',
+      resumeFrom: { state: stopped.state!, steps: stopped.steps, decision: 'continue' },
+    })
+    expect(bodies).toEqual(uninterrupted)
+  })
+
+  it('survives a resolver rebuilt from serialised state', async () => {
+    mock = await startMock({ 'GET /a': () => ({ body: '{}' }), 'POST /b': () => ({ body: '{}' }) })
+    const testCase: TestCase = {
+      name: 'serialised',
+      steps: [
+        { id: 'a', method: 'GET', url: '{{env.API}}/a' },
+        { id: 'b', method: 'POST', url: '{{env.API}}/b', pause: true, body: { type: 'json', value: { u: '{{auto.uuid}}' } } },
+      ],
+    }
+    const paused = await run(testCase, mock.url)
+    const throughJson = JSON.parse(JSON.stringify({ state: paused.state, steps: paused.steps }))
+    const done = await runCase({
+      case: testCase,
+      env: env(mock.url),
+      seed: 'run-seed',
+      anchorAt: ANCHOR,
+      assetsDir: 'test/assets',
+      resumeFrom: { ...throughJson, decision: 'continue' },
+    })
+    expect(done.status).toBe('passed')
+  })
+
+  it('does not run a step delay twice when the step is resumed', async () => {
+    mock = await startMock({ 'GET /a': () => ({ body: '{}' }) })
+    const testCase: TestCase = {
+      name: 'delay at pause',
+      steps: [{ id: 'a', method: 'GET', url: '{{env.API}}/a', pause: true, delay: '300ms' }],
+    }
+    const started = Date.now()
+    const paused = await run(testCase, mock.url)
+    const pausedAfter = Date.now() - started
+    await runCase({
+      case: testCase,
+      env: env(mock.url),
+      seed: 'run-seed',
+      anchorAt: ANCHOR,
+      assetsDir: 'test/assets',
+      resumeFrom: { state: paused.state!, steps: paused.steps, decision: 'continue' },
+    })
+    expect(pausedAfter).toBeLessThan(150)
+    expect(Date.now() - started).toBeGreaterThanOrEqual(295)
+  })
+
+  it('records the origin of each generated field', async () => {
+    mock = await startMock({ 'POST /x': () => ({ body: '{}' }) })
+    const result = await run(
+      {
+        name: 'origins',
+        steps: [
+          {
+            id: 'x',
+            method: 'POST',
+            url: '{{env.API}}/x',
+            body: { type: 'json', value: { when: '{{auto.pastDate(7)}}', fixed: 'literal' } },
+          },
+        ],
+      },
+      mock.url,
+    )
+    expect(result.steps[0].origins?.['body.when']).toEqual(['auto.pastDate(7)'])
+    expect(result.steps[0].origins?.['body.fixed']).toBeUndefined()
   })
 })
