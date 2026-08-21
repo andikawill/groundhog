@@ -28,7 +28,9 @@ Early development. The engine and its CLI work; there is no UI yet.
 Requires Node 20.19 or newer.
 
 ```bash
+cp .env.example .env
 npm install
+npx prisma db push
 npm test
 ```
 
@@ -155,9 +157,13 @@ whole collection.*
 
 ## Design constraints
 
-**No runtime dependencies.** `fetch`, `FormData`, `AbortSignal.timeout`, and
-`node:http` cover what this needs. A path reader and a seeded generator are a
-few dozen lines each — cheaper to own than to import.
+**The engine has no runtime dependencies.** `fetch`, `FormData`,
+`AbortSignal.timeout`, and `node:http` cover what it needs; a path reader and a
+seeded generator are a few dozen lines each, cheaper to own than to import. The
+app around it does take dependencies — Next.js, React, Prisma — because writing
+those from scratch would be a worse trade. The rule holds where it earns
+something: `lib/engine/` is imported by both the CLI and a route handler, so it
+stays free of both.
 
 **The engine reads no clock.** Generated dates derive from a time anchor stored
 with the seed. A wall-clock read would make the same seed produce different

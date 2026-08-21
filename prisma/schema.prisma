@@ -1,0 +1,29 @@
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "sqlite"
+  url      = env("DATABASE_URL")
+}
+
+model Run {
+  id           String    @id @default(cuid())
+  caseName     String
+  caseRoot     String
+  casePath     String
+  envName      String
+  envRoot      String
+  envPath      String
+  sharedPath   String?
+  assetsDir    String
+  seed         String
+  anchorAt     DateTime
+  status       String
+  caseSnapshot Json
+  envSnapshot  Json
+  results      Json
+  pauseState   Json?
+  startedAt    DateTime  @default(now())
+  endedAt      DateTime?
+}

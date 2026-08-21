@@ -7,15 +7,28 @@
   "type": "module",
   "scripts": {
     "test": "vitest run",
-    "run-case": "tsx bin/run-case.ts"
+    "run-case": "tsx bin/run-case.ts",
+    "dev": "next dev",
+    "build": "next build",
+    "start": "next start",
+    "db:push": "prisma db push"
   },
   "devDependencies": {
     "@types/node": "^20.19.0",
+    "@types/react": "^19.2.18",
+    "@types/react-dom": "^19.2.4",
+    "prisma": "^6.19.3",
     "tsx": "^4.19.0",
     "typescript": "^5.7.0",
     "vitest": "^2.1.0"
   },
   "engines": {
     "node": ">=20.19"
+  },
+  "dependencies": {
+    "@prisma/client": "^6.19.3",
+    "next": "^15.5.23",
+    "react": "^19.2.8",
+    "react-dom": "^19.2.8"
   }
 }
