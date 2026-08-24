@@ -1,7 +1,7 @@
 import { afterEach, beforeEach, describe, expect, it } from 'vitest'
 import { db } from '../lib/store/db'
 import { GET as getFiles } from '../app/api/files/route'
-import { POST as postRun } from '../app/api/runs/route'
+import { GET as listRuns, POST as postRun } from '../app/api/runs/route'
 import { GET as getOneRun } from '../app/api/runs/[id]/route'
 import { POST as postResume } from '../app/api/runs/[id]/resume/route'
 
@@ -35,6 +35,27 @@ describe('POST /api/runs', () => {
   it('rejects a missing body field', async () => {
     const res = await postRun(post({ casePath: 'food-journal.case.json' }))
     expect(res.status).toBe(400)
+  })
+})
+
+describe('GET /api/runs', () => {
+  it('lists the runs that exist, newest first', async () => {
+    const first = await postRun(post({ casePath: 'food-journal.case.json', envPath: 'staging.env.json' }))
+    expect(first.status).toBe(201)
+    const second = await postRun(post({ casePath: 'food-journal.case.json', envPath: 'staging.env.json' }))
+    const { id } = await second.json()
+
+    const body = await (await listRuns(new Request('http://local/api/runs'))).json()
+    expect(body.runs).toHaveLength(2)
+    expect(body.runs[0].id).toBe(id)
+    expect(body.runs[0].caseName).toBe('food-journal')
+  })
+
+  it('honours a limit from the query string', async () => {
+    await postRun(post({ casePath: 'food-journal.case.json', envPath: 'staging.env.json' }))
+    await postRun(post({ casePath: 'food-journal.case.json', envPath: 'staging.env.json' }))
+    const body = await (await listRuns(new Request('http://local/api/runs?limit=1'))).json()
+    expect(body.runs).toHaveLength(1)
   })
 })
 
