@@ -95,6 +95,27 @@ describe('preflight', () => {
     expect(preflight({ case: simpleCase, env }).join(' ')).toMatch(/confirm/)
     expect(preflight({ case: simpleCase, env, confirmed: true })).toEqual([])
   })
+
+  it('rejects a duration it cannot parse instead of falling back', () => {
+    const bad: TestCase = {
+      name: 'typo',
+      steps: [{ id: 'a', method: 'GET', url: '{{env.API}}/x', every: '1min', timeout: '30sec' }],
+    }
+    const errors = preflight({ case: bad, env: resolveEnv(shared, staging) })
+    expect(errors.join(' ')).toContain('every')
+    expect(errors.join(' ')).toContain('1min')
+    expect(errors.join(' ')).toContain('timeout')
+  })
+
+  it('accepts the durations it does understand', () => {
+    const good: TestCase = {
+      name: 'fine',
+      steps: [
+        { id: 'a', method: 'GET', url: '{{env.API}}/x', every: '250ms', timeout: '2m', delay: '3s' },
+      ],
+    }
+    expect(preflight({ case: good, env: resolveEnv(shared, staging) })).toEqual([])
+  })
 })
 
 describe('makeRedactor', () => {

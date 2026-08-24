@@ -68,6 +68,10 @@ export function buildRequest(step: Step, r: Resolver): SentRequest {
           form.set(key, new Blob([bytes]), path.split('/').pop())
         }
       }
+      // send strips this from the wire so fetch can supply its own boundary. Strip it from
+      // the record too: a stored request that names a header nobody sent describes a request
+      // that never happened.
+      delete headers['content-type']
       request.multipart = form
       break
     }
@@ -118,9 +122,12 @@ export async function send(request: SentRequest, timeoutMs: number): Promise<Raw
   const truncated = buffer.byteLength > MAX_BODY_BYTES
   const text = cutAtCharBoundary(buffer, MAX_BODY_BYTES).toString('utf8')
 
+  const setCookie = response.headers.getSetCookie()
+
   return {
     status: response.status,
     headers,
+    setCookie: setCookie.length > 0 ? setCookie : undefined,
     text,
     truncated,
   }

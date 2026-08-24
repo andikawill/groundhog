@@ -122,6 +122,18 @@ describe('buildRequest', () => {
     expect(request.bodyBytes).toBeUndefined()
   })
 
+  it('does not record a content-type it will not send for a multipart body', () => {
+    const request = buildRequest(
+      {
+        ...base,
+        headers: { 'Content-Type': 'text/plain' },
+        body: { type: 'multipart', value: { caption: 'x' } },
+      },
+      resolver(),
+    )
+    expect(request.headers['content-type']).toBeUndefined()
+  })
+
   it('refuses a GET step that declares a body', () => {
     expect(() =>
       buildRequest(

@@ -38,6 +38,7 @@ export function redactResponse(
   return {
     status: response.status,
     headers,
+    setCookie: response.setCookie?.map(redact),
     text: redact(response.text),
     truncated: response.truncated,
   }
