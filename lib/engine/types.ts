@@ -53,6 +53,9 @@ export type SentRequest = {
 export type RawResponse = {
   status: number
   headers: Record<string, string>
+  // headers is flat, so repeated Set-Cookie values collapse to the last one. They are kept
+  // here instead of losing every cookie but one.
+  setCookie?: string[]
   text: string
   truncated: boolean
 }

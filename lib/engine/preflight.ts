@@ -1,6 +1,13 @@
 import type { EnvDef, Guard, TestCase } from './types'
 import { collectEnvRefs } from './template'
 
+export function parseDurationStrict(input: string): number | null {
+  const match = /^(\d+(?:\.\d+)?)(ms|s|m)$/.exec(input.trim())
+  if (!match) return null
+  const value = Number(match[1])
+  return match[2] === 'ms' ? value : match[2] === 's' ? value * 1000 : value * 60000
+}
+
 export type ResolvedEnv = {
   vars: Record<string, string>
   secrets: string[]
@@ -49,6 +56,15 @@ export function preflight(input: {
 
   if (input.env.guard === 'confirm' && input.confirmed !== true) {
     errors.push(`env "${input.env.name}" requires confirmation before running`)
+  }
+
+  for (const step of input.case.steps) {
+    for (const field of ['delay', 'every', 'timeout'] as const) {
+      const raw = step[field]
+      if (raw !== undefined && parseDurationStrict(raw) === null) {
+        errors.push(`step "${step.id}" has an unparseable ${field}: "${raw}"`)
+      }
+    }
   }
 
   return errors

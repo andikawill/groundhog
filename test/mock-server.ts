@@ -7,7 +7,13 @@ export type MockReq = {
   query: URLSearchParams
   hit: number
 }
-export type MockRes = { status?: number; headers?: Record<string, string>; body?: string }
+// A repeated header needs an array, and res.writeHead already takes one. A single Set-Cookie
+// passes against the broken code; the defect only shows with two.
+export type MockRes = {
+  status?: number
+  headers?: Record<string, string | string[]>
+  body?: string
+}
 export type MockRoutes = Record<string, (req: MockReq) => MockRes | Promise<MockRes>>
 export type MockHandle = { url: string; close: () => Promise<void>; hits: Record<string, number> }
 

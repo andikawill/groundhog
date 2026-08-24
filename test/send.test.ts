@@ -132,6 +132,20 @@ describe('send', () => {
   })
 })
 
+describe('send set-cookie', () => {
+  it('keeps every Set-Cookie header rather than the last one', async () => {
+    mock = await startMock({
+      'GET /cookies': () => ({
+        headers: { 'set-cookie': ['a=1', 'b=2'] },
+        body: '{}',
+      }),
+    })
+    const response = await send({ method: 'GET', url: `${mock.url}/cookies`, headers: {} }, 5000)
+    expect(response.setCookie).toEqual(['a=1', 'b=2'])
+    expect(response.headers['set-cookie']).toBeDefined()
+  })
+})
+
 describe('traceOf', () => {
   it('picks known correlation headers only', () => {
     expect(

@@ -1,6 +1,6 @@
 import { evalExpr, readRef, type EvalTarget } from './assert'
 import { StepDeclarationError, buildRequest, send, traceOf } from './http'
-import { preflight, type ResolvedEnv } from './preflight'
+import { parseDurationStrict, preflight, type ResolvedEnv } from './preflight'
 import { makeRedactor, redactRequest, redactResponse } from './redact'
 import { MissingRefError, makeResolver, snapshotResolver } from './template'
 import type { AssertResult, RawResponse, RunStep, Step, StepStatus, TestCase } from './types'
@@ -59,12 +59,13 @@ export type RunResult = {
   state?: RunState
 }
 
+// One parser, two policies: the fallback is right at run time — a step still has to run —
+// and wrong before it, where a mistyped unit silently becoming the default is a lie about
+// what the case asked for. parseDurationStrict lives in preflight.ts because this module
+// already imports that one, and the reverse would close a cycle.
 export function parseDuration(input: string | undefined, fallbackMs: number): number {
   if (!input) return fallbackMs
-  const match = /^(\d+(?:\.\d+)?)(ms|s|m)$/.exec(input.trim())
-  if (!match) return fallbackMs
-  const value = Number(match[1])
-  return match[2] === 'ms' ? value : match[2] === 's' ? value * 1000 : value * 60000
+  return parseDurationStrict(input) ?? fallbackMs
 }
 
 function targetOf(response: { status: number; headers: Record<string, string>; text: string }): EvalTarget {
