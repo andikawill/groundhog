@@ -102,6 +102,41 @@ describe('evalExpr', () => {
     expect(evalExpr('$.data.count != 0', empty, resolver()).ok).toBe(true)
   })
 
+  it('fails a comparison against an unreadable path instead of reporting success', () => {
+    const result = evalExpr('$.data.staus != "error"', target, resolver())
+    expect(result.ok).toBe(false)
+    expect(result.detail).toContain('$.data.staus')
+  })
+
+  it('fails every comparison operator against an unreadable path', () => {
+    for (const expr of [
+      '$.data.staus == "done"',
+      '$.data.staus != "done"',
+      '$.data.staus contains d',
+      '$.data.staus matches d',
+      '$.data.staus > 1',
+      '$.data.staus length == 4',
+    ]) {
+      expect(evalExpr(expr, target, resolver()).ok, expr).toBe(false)
+    }
+  })
+
+  it('leaves exists as the only way to ask about absence', () => {
+    expect(evalExpr('$.data.staus exists', target, resolver()).ok).toBe(false)
+    expect(evalExpr('$.data.status exists', target, resolver()).ok).toBe(true)
+  })
+
+  it('matches contains against an object element by its JSON form', () => {
+    expect(evalExpr('$.data.items contains nasi', target, resolver()).ok).toBe(true)
+    expect(evalExpr('$.data.items contains rendang', target, resolver()).ok).toBe(false)
+  })
+
+  it('still matches a primitive array element exactly', () => {
+    const tags = { ...target, json: { data: { tags: ['nasi', 'lemak'] } } }
+    expect(evalExpr('$.data.tags contains nasi', tags, resolver()).ok).toBe(true)
+    expect(evalExpr('$.data.tags contains nas', tags, resolver()).ok).toBe(false)
+  })
+
   it('fails instead of throwing on an invalid regular expression', () => {
     const result = evalExpr('$.data.id matches (', target, resolver())
     expect(result.ok).toBe(false)

@@ -44,8 +44,16 @@ function compare(op: string, left: unknown, right: string | number): boolean | u
     case '<':
       return Number(left) < Number(right)
     case 'contains':
+      // An element that is an object stringifies to [object Object], so every such array
+      // answered false whatever it held. A primitive element still has to match exactly —
+      // `contains nasi` over ['nasi lemak'] is a question about membership, not substrings —
+      // while an object is matched against its JSON, which is the only text it has.
       return Array.isArray(left)
-        ? left.map(String).includes(String(right))
+        ? left.some((item) =>
+            item !== null && typeof item === 'object'
+              ? JSON.stringify(item).includes(String(right))
+              : String(item) === String(right),
+          )
         : String(left).includes(String(right))
     case 'matches':
       return new RegExp(String(right)).test(String(left))
@@ -60,7 +68,8 @@ export function evalExpr(expr: string, target: EvalTarget, r: Resolver): AssertR
   let value = readRef(ref, target)
   let index = 1
 
-  if (parts[index] === 'length') {
+  const measured = parts[index] === 'length'
+  if (measured) {
     value = lengthOf(value)
     index += 1
   }
@@ -69,6 +78,13 @@ export function evalExpr(expr: string, target: EvalTarget, r: Resolver): AssertR
   if (op === 'exists') {
     const ok = value !== undefined
     return { expr, ok, detail: ok ? undefined : `${ref} is undefined` }
+  }
+
+  // A reference that cannot be read fails every comparison. String(undefined) != "error"
+  // was true, so a misspelled path reported success — the one thing an assertion must never
+  // do. exists is left as the only operator that asks about absence.
+  if (value === undefined) {
+    return { expr, ok: false, detail: `${measured ? `${ref} length` : ref} is undefined` }
   }
 
   let right: string | number
