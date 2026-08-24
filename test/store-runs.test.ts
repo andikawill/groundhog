@@ -6,6 +6,7 @@ import {
   createRun,
   finishRun,
   getRun,
+  listRuns,
   markOrphansInterrupted,
   pauseRun,
 } from '../lib/store/runs'
@@ -127,6 +128,39 @@ describe('claimResume', () => {
     await claimResume(id)
     const raw = await db.run.findUnique({ where: { id } })
     expect(raw?.pauseState).toBeNull()
+  })
+})
+
+describe('listRuns', () => {
+  it('returns the newest run first', async () => {
+    const first = await newRun()
+    const second = await newRun()
+    expect((await listRuns()).map((r) => r.id)).toEqual([second, first])
+  })
+
+  it('honours the limit', async () => {
+    await newRun()
+    await newRun()
+    expect(await listRuns(1)).toHaveLength(1)
+  })
+
+  it('reports the status a run is in', async () => {
+    const id = await newRun()
+    await finishRun(id, 'failed')
+    expect((await listRuns())[0]?.status).toBe('failed')
+  })
+
+  it('carries neither pauseState nor the step bodies', async () => {
+    const id = await newRun()
+    await appendStep(id, step('a'))
+    await pauseRun(id, { stepIndex: 0, ctx: { token: 'sk_live_secret' }, memo: {}, rngState: 1 })
+    const listed = JSON.stringify(await listRuns())
+    expect(listed).not.toContain('sk_live_secret')
+    expect(listed).not.toContain('asserts')
+  })
+
+  it('returns an empty list when nothing has run', async () => {
+    expect(await listRuns()).toEqual([])
   })
 })
 

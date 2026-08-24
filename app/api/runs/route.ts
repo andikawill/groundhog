@@ -2,6 +2,13 @@ import { NextResponse } from 'next/server'
 import { ASSETS_DIR, CASE_ROOT, ENV_ROOT } from '../../../lib/service/config'
 import { FileRequestError } from '../../../lib/service/files'
 import { startRun } from '../../../lib/service/execute'
+import { listRuns } from '../../../lib/store/runs'
+
+export async function GET(request: Request) {
+  const asked = Number(new URL(request.url).searchParams.get('limit'))
+  const runs = await listRuns(Number.isFinite(asked) && asked > 0 ? asked : undefined)
+  return NextResponse.json({ runs })
+}
 
 export async function POST(request: Request) {
   let body: {

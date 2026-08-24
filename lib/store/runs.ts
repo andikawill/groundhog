@@ -103,6 +103,37 @@ export async function getRun(id: string): Promise<StoredRun | null> {
   }
 }
 
+// No step count and no results: counting them means reading every stored body, and a body is
+// capped at 256 KB, so a page of fifty runs would move tens of megabytes to render a number.
+// If the count turns out to be worth having, it wants a column of its own.
+export type RunSummary = {
+  id: string
+  caseName: string
+  envName: string
+  status: RunStatus
+  startedAt: Date
+  endedAt: Date | null
+}
+
+export async function listRuns(limit = 50): Promise<RunSummary[]> {
+  const rows = await db.run.findMany({
+    // startedAt alone is not a total order: two runs started in the same millisecond tie, and
+    // the list then reorders itself between refreshes. cuid sorts by creation within a
+    // process, so the id breaks the tie the way a reader expects.
+    orderBy: [{ startedAt: 'desc' }, { id: 'desc' }],
+    take: Math.min(Math.max(Math.trunc(limit), 1), 200),
+    select: {
+      id: true,
+      caseName: true,
+      envName: true,
+      status: true,
+      startedAt: true,
+      endedAt: true,
+    },
+  })
+  return rows.map((row) => ({ ...row, status: row.status as RunStatus }))
+}
+
 const appendQueues = new Map<string, Promise<void>>()
 
 export async function appendStep(id: string, step: RunStep): Promise<void> {

@@ -5,6 +5,16 @@ import type { RunStep } from '../lib/engine/index'
 
 type Status = 'running' | 'awaiting' | 'interrupted' | 'passed' | 'failed'
 
+// Declared here rather than imported from the store: this is a client component, and the
+// store imports Prisma. Over the wire the dates are strings, which is what they are here.
+type RunSummary = {
+  id: string
+  caseName: string
+  envName: string
+  status: Status
+  startedAt: string
+}
+
 export default function RunView() {
   const [files, setFiles] = useState<{ cases: string[]; envs: string[] }>({ cases: [], envs: [] })
   const [casePath, setCasePath] = useState('')
@@ -14,6 +24,7 @@ export default function RunView() {
   const [status, setStatus] = useState<Status | null>(null)
   const [selected, setSelected] = useState<string | null>(null)
   const [error, setError] = useState<string | null>(null)
+  const [runs, setRuns] = useState<RunSummary[]>([])
 
   useEffect(() => {
     void fetch('/api/files')
@@ -24,6 +35,14 @@ export default function RunView() {
         setEnvPath(f.envs[0] ?? '')
       })
   }, [])
+
+  // Reloaded on every status change, which is a handful of times per run: starting one and
+  // finishing one are exactly the moments the list is out of date.
+  useEffect(() => {
+    void fetch('/api/runs')
+      .then((r) => r.json())
+      .then((body) => setRuns(body.runs))
+  }, [status])
 
   useEffect(() => {
     if (!runId || status === 'awaiting' || status === 'passed' || status === 'failed') return
@@ -92,6 +111,22 @@ export default function RunView() {
     setStatus('running')
   }
 
+  async function open(id: string) {
+    setError(null)
+    const res = await fetch(`/api/runs/${id}`)
+    const body = await res.json()
+    if (!res.ok) {
+      setError(body.error)
+      return
+    }
+    // Steps land before the id and status, so the stream effect — which only reopens for a
+    // run still going — never sees this run's id beside another run's steps.
+    setSteps(body.results)
+    setSelected(null)
+    setRunId(id)
+    setStatus(body.status)
+  }
+
   const step = steps.find((s) => s.id === selected) ?? steps[steps.length - 1]
 
   return (
@@ -154,6 +189,31 @@ export default function RunView() {
             </li>
           ))}
         </ol>
+
+        {runs.length > 0 && (
+          <>
+            <p style={{ fontSize: 13, opacity: 0.6, marginTop: 24 }}>earlier runs</p>
+            <ol style={{ listStyle: 'none', padding: 0, fontSize: 12 }}>
+              {runs.map((r) => (
+                <li key={r.id} style={{ padding: '3px 0' }}>
+                  <button
+                    onClick={() => void open(r.id)}
+                    style={{
+                      all: 'unset',
+                      cursor: 'pointer',
+                      fontWeight: r.id === runId ? 600 : 400,
+                    }}
+                  >
+                    {r.status} {r.caseName}{' '}
+                    <span style={{ opacity: 0.6 }}>
+                      {r.envName} · {new Date(r.startedAt).toLocaleTimeString()}
+                    </span>
+                  </button>
+                </li>
+              ))}
+            </ol>
+          </>
+        )}
       </div>
 
       <div>
