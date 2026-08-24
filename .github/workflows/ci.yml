@@ -11,6 +11,11 @@ permissions:
 jobs:
   test:
     runs-on: ubuntu-latest
+    env:
+      # .env is gitignored, so a checkout has nothing for Prisma to read and every test that
+      # touches the store fails on a missing DATABASE_URL. The suite needs a schema pushed
+      # into a real file too — it runs against SQLite, not a stubbed client.
+      DATABASE_URL: file:./ci.db
     steps:
       - uses: actions/checkout@v4
       - uses: actions/setup-node@v4
@@ -18,5 +23,6 @@ jobs:
           node-version: '20.19'
           cache: npm
       - run: npm ci
+      - run: npx prisma db push
       - run: npx tsc --noEmit
       - run: npm test
