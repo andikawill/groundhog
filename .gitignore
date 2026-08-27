@@ -13,6 +13,7 @@ docs/superpowers/
 # agent tooling — local preference, not the project's
 CLAUDE.md
 AGENTS.md
+.claude/
 .cursor/
 .windsurf/
 .clinerules/
