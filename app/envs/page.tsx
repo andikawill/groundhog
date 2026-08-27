@@ -3,12 +3,21 @@ import EnvsView from '../EnvsView'
 
 export default function Page() {
   return (
-    <main>
-      <h1 style={{ fontSize: 18, fontWeight: 500, padding: '24px 24px 0' }}>envs</h1>
-      <p style={{ fontSize: 13, padding: '0 24px' }}>
-        <Link href="/">back to runs</Link>
-      </p>
-      <EnvsView />
-    </main>
+    <div className="app">
+      <header className="app__header">
+        <span className="brand">groundhog</span>
+        <span className="spacer" />
+        <nav className="nav">
+          <Link href="/">runs</Link>
+          <Link href="/envs" aria-current="page">
+            envs
+          </Link>
+        </nav>
+      </header>
+      <div className="app__body app__body--wide">
+        <h1 className="title">envs</h1>
+        <EnvsView />
+      </div>
+    </div>
   )
 }

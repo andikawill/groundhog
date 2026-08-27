@@ -1,19 +1,7 @@
-import Link from 'next/link'
 import RunView from './RunView'
 
+// The run screen's header carries the case picker, the env picker and the run button, all of
+// which hold state, so the shell is rendered by the client component rather than here.
 export default function Page() {
-  return (
-    <main>
-      <h1 style={{ fontSize: 18, fontWeight: 500, padding: '24px 24px 0' }}>groundhog</h1>
-      <p style={{ fontSize: 13, opacity: 0.7, padding: '0 24px' }}>
-        Replay reads the case and env files as they are now, not as they were — a run is only
-        reproducible while both are unchanged. A resume is different: it continues from the
-        case the run started with.
-      </p>
-      <p style={{ fontSize: 13, padding: '4px 24px 0' }}>
-        <Link href="/envs">envs</Link>
-      </p>
-      <RunView />
-    </main>
-  )
+  return <RunView />
 }

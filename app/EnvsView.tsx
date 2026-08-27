@@ -2,12 +2,16 @@
 
 import { useEffect, useState } from 'react'
 
-// Declared here rather than imported from lib/service/envs: this is a client component, and
-// that module reaches the filesystem. The shapes are small and the wire format is the
-// contract.
+// Declared here rather than imported from the store: this is a client component, and that
+// module reaches the filesystem. The shapes are small and the wire format is the contract.
 type CellView = { key: string; secret: boolean; hasValue: boolean; value?: string }
 type EnvFileView = { file: string; name: string; guard: string; vars: CellView[] }
 type Matrix = { root: string; shared: EnvFileView | null; envs: EnvFileView[] }
+
+function Guard({ guard }: { guard: string }) {
+  const tone = guard === 'confirm' || guard === 'readonly' ? ` guard--${guard}` : ''
+  return <span className={`guard${tone}`}>{guard}</span>
+}
 
 export default function EnvsView() {
   const [matrix, setMatrix] = useState<Matrix | null>(null)
@@ -20,7 +24,7 @@ export default function EnvsView() {
       .then(setMatrix)
   }, [])
 
-  if (!matrix) return <p style={{ fontSize: 13, padding: 24 }}>loading</p>
+  if (!matrix) return <p className="empty">loading</p>
 
   const columns = [...(matrix.shared ? [matrix.shared] : []), ...matrix.envs]
   const keys = [...new Set(columns.flatMap((c) => c.vars.map((v) => v.key)))].sort()
@@ -67,91 +71,115 @@ export default function EnvsView() {
   }
 
   return (
-    <div style={{ padding: 24, fontSize: 13 }}>
-      <p style={{ opacity: 0.6 }}>
-        writing to <code>{matrix.root}</code>
+    <>
+      <p className="meta">
+        writing to <span className="mono">{matrix.root}</span>
       </p>
-      {error && <p style={{ color: '#a32d2d' }}>{error}</p>}
 
-      <table style={{ borderCollapse: 'collapse' }}>
-        <thead>
-          <tr>
-            <th style={{ textAlign: 'left', padding: '4px 8px' }}>variable</th>
-            {columns.map((column) => (
-              <th key={column.file} style={{ textAlign: 'left', padding: '4px 8px' }}>
-                {column.name} <span style={{ opacity: 0.6, fontWeight: 400 }}>{column.guard}</span>
-              </th>
-            ))}
-          </tr>
-        </thead>
-        <tbody>
-          {rows.map((key) => (
-            <tr key={key}>
-              <td style={{ padding: '4px 8px', fontFamily: 'ui-monospace, monospace' }}>{key}</td>
-              {columns.map((column) => {
-                const cell = cellOf(column, key)
-                return (
-                  <td key={column.file} style={{ padding: '4px 8px' }}>
-                    <input
-                      key={`${column.file}:${key}:${cell?.value ?? ''}:${String(cell?.secret)}`}
-                      defaultValue={cell?.secret ? '' : (cell?.value ?? '')}
-                      placeholder={
-                        cell?.secret
-                          ? cell.hasValue
-                            ? '*** set'
-                            : 'not set'
-                          : inherits(column, key)
-                            ? 'shared'
-                            : ''
-                      }
-                      onKeyDown={(e) => {
-                        if (e.key === 'Enter') e.currentTarget.blur()
-                      }}
-                      onBlur={(e) => {
-                        const next = e.currentTarget.value
-                        const unchanged = cell?.secret ? next === '' : next === (cell?.value ?? '')
-                        if (unchanged) return
-                        void save(column.file, key, { value: next })
-                      }}
-                      style={{
-                        width: 200,
-                        font: 'inherit',
-                        padding: '2px 4px',
-                        border: `1px solid ${isEmpty(column, key) ? '#a32d2d' : '#ccc'}`,
-                      }}
-                    />{' '}
-                    <button
-                      onClick={() => void save(column.file, key, { secret: !cell?.secret })}
-                      style={{ font: 'inherit', cursor: 'pointer' }}
-                    >
-                      {cell?.secret ? 'secret' : 'plain'}
-                    </button>
-                  </td>
-                )
-              })}
+      {error && <p className="error">{error}</p>}
+
+      <div className="table-scroll">
+        <table className="table">
+          <thead>
+            <tr>
+              <th>variable</th>
+              {columns.map((column) => (
+                <th key={column.file}>
+                  <span className="col-head">
+                    {column.name}
+                    <Guard guard={column.guard} />
+                  </span>
+                </th>
+              ))}
             </tr>
-          ))}
-        </tbody>
-        <tfoot>
-          <tr>
-            <td colSpan={columns.length + 1} style={{ padding: '8px', opacity: 0.7 }}>
-              {emptyCount} empty {emptyCount === 1 ? 'cell' : 'cells'}
-            </td>
-          </tr>
-        </tfoot>
-      </table>
+          </thead>
+          <tbody>
+            {rows.map((key) => (
+              <tr key={key}>
+                <td className="table__rowhead">{key}</td>
+                {columns.map((column) => {
+                  const cell = cellOf(column, key)
+                  const empty = isEmpty(column, key)
+                  const inherited = inherits(column, key)
+                  const state = empty ? ' cell--empty' : inherited ? ' cell--inherited' : ''
+                  return (
+                    <td key={column.file}>
+                      <span className={`cell${state}`}>
+                        <input
+                          className="cell__input"
+                          key={`${column.file}:${key}:${cell?.value ?? ''}:${String(cell?.secret)}`}
+                          defaultValue={cell?.secret ? '' : (cell?.value ?? '')}
+                          aria-label={`${key} in ${column.name}`}
+                          aria-invalid={empty ? 'true' : undefined}
+                          placeholder={
+                            cell?.secret
+                              ? cell.hasValue
+                                ? '*** set'
+                                : 'not set'
+                              : inherited
+                                ? 'shared'
+                                : empty
+                                  ? 'empty'
+                                  : ''
+                          }
+                          onKeyDown={(e) => {
+                            if (e.key === 'Enter') e.currentTarget.blur()
+                          }}
+                          onBlur={(e) => {
+                            const next = e.currentTarget.value
+                            const unchanged = cell?.secret
+                              ? next === ''
+                              : next === (cell?.value ?? '')
+                            if (unchanged) return
+                            void save(column.file, key, { value: next })
+                          }}
+                        />
+                        {empty && (
+                          <span className="cell__mark" title="empty" aria-label="empty">
+                            !
+                          </span>
+                        )}
+                        <button
+                          className="cell__flag"
+                          aria-pressed={cell?.secret ? 'true' : 'false'}
+                          onClick={() => void save(column.file, key, { secret: !cell?.secret })}
+                        >
+                          {cell?.secret ? 'secret' : 'plain'}
+                        </button>
+                      </span>
+                    </td>
+                  )
+                })}
+              </tr>
+            ))}
+          </tbody>
+          <tfoot>
+            <tr>
+              <td colSpan={columns.length + 1}>
+                <span className={emptyCount > 0 ? 'count count--warn' : 'count'}>
+                  {emptyCount} empty {emptyCount === 1 ? 'cell' : 'cells'}
+                </span>
+                {emptyCount > 0 && ' · marked !'}
+              </td>
+            </tr>
+          </tfoot>
+        </table>
+      </div>
 
-      <p style={{ marginTop: 16 }}>
+      <div className="field">
+        <label className="field__label" htmlFor="add-variable">
+          add a variable
+        </label>
         <input
+          id="add-variable"
+          className="input input--mono"
           value={newKey}
           onChange={(e) => setNewKey(e.target.value)}
-          placeholder="add a variable"
-          style={{ font: 'inherit', padding: '2px 4px' }}
-        />{' '}
-        <span style={{ opacity: 0.6 }}>
-          the row is yours until you type a value — nothing is written before that
-        </span>
-      </p>
-    </div>
+        />
+        <p className="hint">
+          The row is yours until you type a value — nothing is written before that.
+        </p>
+      </div>
+    </>
   )
 }

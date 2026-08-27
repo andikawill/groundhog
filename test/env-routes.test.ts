@@ -11,6 +11,7 @@ let patchEnv: (
   request: Request,
   ctx: { params: Promise<{ file: string }> },
 ) => Promise<Response>
+let getFiles: () => Promise<Response>
 let dir: string
 
 beforeAll(async () => {
@@ -18,6 +19,7 @@ beforeAll(async () => {
   process.env.GROUNDHOG_ENVS = dir
   getEnvs = (await import('../app/api/envs/route')).GET
   patchEnv = (await import('../app/api/envs/[file]/route')).PATCH
+  getFiles = (await import('../app/api/files/route')).GET
 })
 
 beforeEach(async () => {
@@ -87,6 +89,14 @@ describe('GET /api/envs', () => {
     )
     const body = await (await getEnvs()).json()
     expect(body.envs[0].vars[0].hasValue).toBe(false)
+  })
+})
+
+describe('GET /api/files', () => {
+  it('leaves the shared file out of the selectable envs', async () => {
+    const body = await (await getFiles()).json()
+    expect(body.envs).toContain('staging.env.json')
+    expect(body.envs).not.toContain('shared.env.json')
   })
 })
 

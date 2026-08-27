@@ -1,7 +1,8 @@
 'use client'
 
+import Link from 'next/link'
 import { useEffect, useState } from 'react'
-import type { RunStep } from '../lib/engine/index'
+import type { RunStep, Step } from '../lib/engine/index'
 
 type Status = 'running' | 'awaiting' | 'interrupted' | 'passed' | 'failed'
 
@@ -15,6 +16,33 @@ type RunSummary = {
   startedAt: string
 }
 
+// Glyph, then shape, then colour — the badge never leans on colour alone. The shapes come
+// from the stylesheet: round means the run is still alive, square means it is over, a broken
+// border means nothing was sent.
+const GLYPH: Record<string, string> = {
+  passed: '✓',
+  failed: '×',
+  skipped: '–',
+  awaiting: '‖',
+  running: '>',
+  interrupted: '!',
+}
+
+function Badge({ status, quiet }: { status: string; quiet?: boolean }) {
+  return (
+    <span className={`st st--${status}`}>
+      <span className="st__glyph" aria-hidden="true">
+        {GLYPH[status] ?? '?'}
+      </span>
+      {/* The word stays in the DOM even where the layout hides it: a glyph alone is a shape
+          to a sighted reader and nothing at all to a screen reader. */}
+      <span className={quiet ? 'st__label visually-hidden' : 'st__label'}>{status}</span>
+    </span>
+  )
+}
+
+const took = (ms: number) => (ms < 1000 ? `${ms}ms` : `${(ms / 1000).toFixed(1)}s`)
+
 export default function RunView() {
   const [files, setFiles] = useState<{ cases: string[]; envs: string[] }>({ cases: [], envs: [] })
   const [casePath, setCasePath] = useState('')
@@ -25,7 +53,8 @@ export default function RunView() {
   const [selected, setSelected] = useState<string | null>(null)
   const [error, setError] = useState<string | null>(null)
   const [runs, setRuns] = useState<RunSummary[]>([])
-  const [seed, setSeed] = useState<{ seed: string; anchorAt: string } | null>(null)
+  const [meta, setMeta] = useState<{ seed: string; anchorAt: string; envName: string } | null>(null)
+  const [declared, setDeclared] = useState<Step[]>([])
 
   useEffect(() => {
     void fetch('/api/files')
@@ -108,10 +137,7 @@ export default function RunView() {
       setError(body.error)
       return
     }
-    setSteps([])
-    setSelected(null)
-    setRunId(body.id)
-    setStatus('running')
+    await open(body.id)
   }
 
   async function open(id: string) {
@@ -128,158 +154,276 @@ export default function RunView() {
     setSelected(null)
     setRunId(id)
     setStatus(body.status)
-    setSeed({ seed: body.seed, anchorAt: body.anchorAt })
+    setMeta({ seed: body.seed, anchorAt: body.anchorAt, envName: body.envName })
+    // The declaration the run started from, not the file as it stands now. It is what names
+    // the step a paused or running run is sitting on.
+    setDeclared(body.caseSnapshot?.steps ?? [])
   }
 
   const step = steps.find((s) => s.id === selected) ?? steps[steps.length - 1]
+  const settled = status === 'passed' || status === 'failed' || status === 'interrupted'
+
+  // The step a live run is on has no record yet, so its row is derived from the run's own
+  // status plus the next declared step. StepStatus has no awaiting or running member and
+  // should not gain one.
+  const pending =
+    (status === 'awaiting' || status === 'running') && declared[steps.length]
+      ? { id: declared[steps.length].id, status }
+      : null
+
+  const origins = Object.entries(step?.origins ?? {})
 
   return (
-    <div style={{ display: 'grid', gridTemplateColumns: '260px 1fr', gap: 24, padding: 24 }}>
-      <div>
-        <div style={{ display: 'grid', gap: 8, marginBottom: 16 }}>
-          <select value={casePath} onChange={(e) => setCasePath(e.target.value)}>
+    <div className="app">
+      <header className="app__header">
+        <span className="brand">groundhog</span>
+
+        <div className="picker">
+          <select
+            className="select"
+            aria-label="case"
+            value={casePath}
+            onChange={(e) => setCasePath(e.target.value)}
+          >
             {files.cases.map((f) => (
               <option key={f} value={f}>
                 {f}
               </option>
             ))}
           </select>
-          <select value={envPath} onChange={(e) => setEnvPath(e.target.value)}>
+        </div>
+
+        <div className="picker">
+          <select
+            className="select"
+            aria-label="env"
+            value={envPath}
+            onChange={(e) => setEnvPath(e.target.value)}
+          >
             {files.envs.map((f) => (
               <option key={f} value={f}>
                 {f}
               </option>
             ))}
           </select>
-          <button onClick={start} disabled={status === 'running'}>
-            run
-          </button>
         </div>
 
-        {status && (
-          <p style={{ fontSize: 13 }}>
-            status: <strong>{status}</strong>
-          </p>
-        )}
-        {seed && status && (
-          <p style={{ fontSize: 12, opacity: 0.7, fontFamily: 'ui-monospace, monospace' }}>
-            seed {seed.seed}
-            <br />
-            anchor {seed.anchorAt}
-          </p>
-        )}
-        {error && <p style={{ fontSize: 13, color: '#a32d2d' }}>{error}</p>}
+        <button className="btn btn--primary" onClick={start} disabled={status === 'running'}>
+          run
+        </button>
 
-        {status === 'awaiting' && (
-          <div style={{ display: 'flex', gap: 8, marginBottom: 16 }}>
-            <button onClick={() => resume('continue')}>continue</button>
-            <button onClick={() => resume('skip')}>skip</button>
-          </div>
-        )}
+        <span className="spacer" />
 
-        {(status === 'passed' || status === 'failed' || status === 'interrupted') && (
-          <div style={{ marginBottom: 16 }}>
-            <button onClick={replay}>replay with the same seed</button>
-          </div>
-        )}
+        <nav className="nav">
+          <Link href="/" aria-current="page">
+            runs
+          </Link>
+          <Link href="/envs">envs</Link>
+        </nav>
+      </header>
 
-        <ol style={{ listStyle: 'none', padding: 0, fontSize: 13 }}>
-          {steps.map((s) => (
-            <li key={s.id} style={{ padding: '4px 0' }}>
-              <button
-                onClick={() => setSelected(s.id)}
-                style={{
-                  all: 'unset',
-                  cursor: 'pointer',
-                  fontWeight: s.id === step?.id ? 600 : 400,
-                }}
-              >
-                {s.status === 'passed' ? 'ok' : s.status === 'failed' ? 'FAIL' : 'skip'} {s.id}{' '}
-                <span style={{ opacity: 0.6 }}>{s.durationMs}ms</span>
-              </button>
-            </li>
-          ))}
-        </ol>
+      <div className="app__body">
+        <div className="rail">
+          {status && (
+            <section>
+              <p className="label">run</p>
+              <Badge status={status} />
+              {meta && (
+                <dl className="kv">
+                  <dt className="kv__k">seed</dt>
+                  <dd className="kv__v">
+                    <span className="seed">{meta.seed}</span>
+                  </dd>
+                  <dt className="kv__k">anchor</dt>
+                  <dd className="kv__v">{meta.anchorAt}</dd>
+                  <dt className="kv__k">env</dt>
+                  <dd className="kv__v">{meta.envName}</dd>
+                </dl>
+              )}
+              {settled && (
+                <>
+                  <div className="btn-row">
+                    <button className="btn" onClick={replay}>
+                      replay with the same seed
+                    </button>
+                  </div>
+                  <p className="hint">
+                    A replay reads the case and env files as they are now, not as they were, so
+                    it is byte for byte only while both are unchanged. A resume is different: it
+                    continues from the case the run started with.
+                  </p>
+                </>
+              )}
+            </section>
+          )}
 
-        {runs.length > 0 && (
-          <>
-            <p style={{ fontSize: 13, opacity: 0.6, marginTop: 24 }}>earlier runs</p>
-            <ol style={{ listStyle: 'none', padding: 0, fontSize: 12 }}>
-              {runs.map((r) => (
-                <li key={r.id} style={{ padding: '3px 0' }}>
-                  <button
-                    onClick={() => void open(r.id)}
-                    style={{
-                      all: 'unset',
-                      cursor: 'pointer',
-                      fontWeight: r.id === runId ? 600 : 400,
-                    }}
-                  >
-                    {r.status} {r.caseName}{' '}
-                    <span style={{ opacity: 0.6 }}>
-                      {r.envName} · {new Date(r.startedAt).toLocaleTimeString()}
+          {error && <p className="error">{error}</p>}
+
+          {status === 'awaiting' && (
+            <section>
+              <div className="btn-row">
+                <button className="btn btn--primary" onClick={() => resume('continue')}>
+                  continue
+                </button>
+                <button className="btn" onClick={() => resume('skip')}>
+                  skip
+                </button>
+              </div>
+              <p className="hint">
+                This run is holding the values it extracted, including any access token, or it
+                could not continue. That state is kept apart from the run&apos;s record, is never
+                exported or logged, and is discarded the moment the run continues or ends.
+              </p>
+            </section>
+          )}
+
+          {(steps.length > 0 || pending) && (
+            <section>
+              <p className="label">steps</p>
+              <ol className="steps">
+                {steps.map((s) => (
+                  <li key={s.id}>
+                    <button
+                      className="step"
+                      aria-current={s.id === step?.id ? 'true' : undefined}
+                      onClick={() => setSelected(s.id)}
+                    >
+                      <Badge status={s.status} quiet />
+                      <span className="step__id">{s.id}</span>
+                      <span className="step__meta">
+                        {s.attempts > 1 && <span className="step__attempts">{s.attempts}× </span>}
+                        {took(s.durationMs)}
+                      </span>
+                    </button>
+                  </li>
+                ))}
+                {pending && (
+                  <li>
+                    <span className="step">
+                      <Badge status={pending.status} quiet />
+                      <span className="step__id">{pending.id}</span>
+                      <span className="step__meta">
+                        {pending.status === 'awaiting' ? 'waiting' : '…'}
+                      </span>
                     </span>
-                  </button>
-                </li>
-              ))}
-            </ol>
-          </>
-        )}
+                  </li>
+                )}
+              </ol>
+            </section>
+          )}
+
+          {runs.length > 0 && (
+            <section>
+              <p className="label">earlier runs</p>
+              <ol className="runs">
+                {runs.map((r) => (
+                  <li key={r.id}>
+                    <button
+                      className="run"
+                      aria-current={r.id === runId ? 'true' : undefined}
+                      onClick={() => void open(r.id)}
+                    >
+                      <Badge status={r.status} quiet />
+                      <span className="run__name">{r.caseName}</span>
+                      <span className="run__meta">
+                        {r.envName} · {new Date(r.startedAt).toLocaleTimeString()}
+                      </span>
+                    </button>
+                  </li>
+                ))}
+              </ol>
+            </section>
+          )}
+        </div>
+
+        <div className="pane">
+          {step ? (
+            <>
+              <div className="pane__head">
+                <h2 className="pane__title">{step.id}</h2>
+                <Badge status={step.status} />
+              </div>
+              <div className="pane__body">
+                {step.reason && <p className="error">{step.reason}</p>}
+
+                <div className="evidence">
+                  <div className="evidence__head">
+                    <p className="evidence__req">
+                      {step.request
+                        ? `${step.request.method} ${step.request.url}`
+                        : 'nothing was sent'}
+                    </p>
+                  </div>
+
+                  {step.request?.body !== undefined && (
+                    <pre className="code code--flush">{pretty(step.request.body)}</pre>
+                  )}
+
+                  <div className="evidence__section">
+                    <span className="label">where each value came from</span>
+                    <span className="meta">
+                      {origins.length} {origins.length === 1 ? 'value' : 'values'}
+                    </span>
+                  </div>
+
+                  {origins.length > 0 ? (
+                    <ol className="origins">
+                      {origins.map(([path, tokens]) => (
+                        <li className="origin" key={path}>
+                          <span className="origin__path">{path}</span>
+                          <span className="origin__arrow" aria-hidden="true" />
+                          <span className="origin__token">{tokens.join(', ')}</span>
+                        </li>
+                      ))}
+                    </ol>
+                  ) : (
+                    <p className="evidence__none">
+                      no tokens — every value here was written literally.
+                    </p>
+                  )}
+                </div>
+
+                {step.asserts.length > 0 && (
+                  <section>
+                    <p className="label">assertions</p>
+                    <ol className="asserts">
+                      {step.asserts.map((a, i) => (
+                        <li className={a.ok ? 'assert' : 'assert assert--failed'} key={i}>
+                          <Badge status={a.ok ? 'passed' : 'failed'} quiet />
+                          <span className="mono">{a.expr}</span>
+                          {a.detail && <span className="assert__detail">{a.detail}</span>}
+                        </li>
+                      ))}
+                    </ol>
+                  </section>
+                )}
+
+                {step.trace && Object.keys(step.trace).length > 0 && (
+                  <section>
+                    <p className="label">correlation</p>
+                    <dl className="kv">
+                      {Object.entries(step.trace).map(([key, value]) => (
+                        <div key={key} style={{ display: 'contents' }}>
+                          <dt className="kv__k">{key}</dt>
+                          <dd className="kv__v">{value}</dd>
+                        </div>
+                      ))}
+                    </dl>
+                  </section>
+                )}
+              </div>
+            </>
+          ) : (
+            <div className="pane__body">
+              <p className="empty">
+                Nothing has run yet. Pick a case and an env, then press run — steps land here as
+                they finish, with the payload that was actually sent and where each value in it
+                came from.
+              </p>
+            </div>
+          )}
+        </div>
       </div>
-
-      <div>
-        {step ? (
-          <StepDetail step={step} />
-        ) : (
-          <p style={{ fontSize: 13, opacity: 0.6 }}>no steps yet</p>
-        )}
-      </div>
-    </div>
-  )
-}
-
-function StepDetail({ step }: { step: RunStep }) {
-  return (
-    <div style={{ fontSize: 13, fontFamily: 'ui-monospace, monospace' }}>
-      {step.request && (
-        <p>
-          {step.request.method} {step.request.url}
-        </p>
-      )}
-      {step.reason && <p style={{ color: '#a32d2d' }}>{step.reason}</p>}
-
-      {step.request?.body && (
-        <>
-          <p style={{ opacity: 0.6 }}>body sent</p>
-          <pre style={{ margin: 0, whiteSpace: 'pre-wrap' }}>{pretty(step.request.body)}</pre>
-        </>
-      )}
-
-      {step.origins && Object.keys(step.origins).length > 0 && (
-        <>
-          <p style={{ opacity: 0.6, marginTop: 16 }}>where each value came from</p>
-          <ul style={{ paddingLeft: 16 }}>
-            {Object.entries(step.origins).map(([path, tokens]) => (
-              <li key={path}>
-                {path} ← {tokens.join(', ')}
-              </li>
-            ))}
-          </ul>
-        </>
-      )}
-
-      {step.asserts.length > 0 && (
-        <>
-          <p style={{ opacity: 0.6, marginTop: 16 }}>assertions</p>
-          <ul style={{ paddingLeft: 16 }}>
-            {step.asserts.map((a, i) => (
-              <li key={i} style={{ color: a.ok ? undefined : '#a32d2d' }}>
-                {a.ok ? 'ok' : 'FAIL'} {a.expr} {a.detail ? `— ${a.detail}` : ''}
-              </li>
-            ))}
-          </ul>
-        </>
-      )}
     </div>
   )
 }
