@@ -25,6 +25,7 @@ export default function RunView() {
   const [selected, setSelected] = useState<string | null>(null)
   const [error, setError] = useState<string | null>(null)
   const [runs, setRuns] = useState<RunSummary[]>([])
+  const [seed, setSeed] = useState<{ seed: string; anchorAt: string } | null>(null)
 
   useEffect(() => {
     void fetch('/api/files')
@@ -82,8 +83,10 @@ export default function RunView() {
       setError(body.error)
       return
     }
-    setRunId(body.id)
-    setStatus('running')
+    // Load the row that was just created rather than setting the state a second way here.
+    // It is the only place the seed and the anchor exist, and they are the two values a run
+    // is reproducible from.
+    await open(body.id)
   }
 
   async function resume(decision: 'continue' | 'skip') {
@@ -125,6 +128,7 @@ export default function RunView() {
     setSelected(null)
     setRunId(id)
     setStatus(body.status)
+    setSeed({ seed: body.seed, anchorAt: body.anchorAt })
   }
 
   const step = steps.find((s) => s.id === selected) ?? steps[steps.length - 1]
@@ -155,6 +159,13 @@ export default function RunView() {
         {status && (
           <p style={{ fontSize: 13 }}>
             status: <strong>{status}</strong>
+          </p>
+        )}
+        {seed && status && (
+          <p style={{ fontSize: 12, opacity: 0.7, fontFamily: 'ui-monospace, monospace' }}>
+            seed {seed.seed}
+            <br />
+            anchor {seed.anchorAt}
           </p>
         )}
         {error && <p style={{ fontSize: 13, color: '#a32d2d' }}>{error}</p>}
