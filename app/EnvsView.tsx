@@ -166,7 +166,7 @@ export default function EnvsView() {
         </table>
       </div>
 
-      <div className="field">
+      <div className="field field--key">
         <label className="field__label" htmlFor="add-variable">
           add a variable
         </label>
@@ -176,10 +176,11 @@ export default function EnvsView() {
           value={newKey}
           onChange={(e) => setNewKey(e.target.value)}
         />
-        <p className="hint">
-          The row is yours until you type a value — nothing is written before that.
-        </p>
       </div>
+
+      <p className="hint">
+        The row is yours until you type a value — nothing is written before that.
+      </p>
     </>
   )
 }

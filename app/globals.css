@@ -218,6 +218,14 @@ a {
   font-size: var(--fs-2);
 }
 
+/* Bare text is an 18px target. A nav link is one of two ways off this screen and it should
+ * not need aiming. */
+.nav a {
+  display: inline-flex;
+  align-items: center;
+  min-height: 28px;
+}
+
 .nav a[aria-current='page'] {
   color: var(--fg);
   font-weight: var(--fw-mid);
@@ -230,6 +238,10 @@ a {
   grid-template-columns: var(--rail) minmax(0, 1fr);
   gap: var(--sp-6);
   align-items: start;
+  /* Not just align-items: the body row is 1fr of a full-height page, and auto-sized tracks
+   * would otherwise share the leftover height between them — which on a screen with four
+   * stacked regions reads as three enormous gaps. */
+  align-content: start;
   padding: var(--sp-6) var(--sp-7) var(--sp-8);
 }
 
@@ -243,6 +255,19 @@ a {
   gap: var(--sp-6);
   align-content: start;
   min-width: 0;
+}
+
+/* A labelled region: its label, then its content, at one rhythm. .rail and .pane__body space
+ * regions apart from each other; this is the rhythm inside one. */
+.stack {
+  display: grid;
+  gap: var(--sp-4);
+  align-content: start;
+  min-width: 0;
+}
+
+.stack--tight {
+  gap: var(--sp-2);
 }
 
 .pane {
@@ -461,6 +486,8 @@ a {
   margin: 0;
   padding: 0;
   display: grid;
+  gap: var(--sp-1);
+  width: 100%;
 }
 
 .step,
@@ -613,6 +640,11 @@ a {
   min-width: 0;
 }
 
+/* A field holding one identifier — a variable key, a step id — not a payload. */
+.field--key {
+  max-width: 34ch;
+}
+
 .field__label {
   font-size: var(--fs-1);
   font-weight: var(--fw-mid);
@@ -756,12 +788,18 @@ a {
 
 /* The origins list. Three columns so every arrow lines up down the pane — the alignment is
  * what turns a list into something readable as a table. */
+/* The columns belong to the list, not to each row: a row that owned its own grid would size
+ * max-content against its own path alone, and the arrows would step in and out down the pane.
+ * subgrid keeps the row as a box — it still carries the zebra stripe and the failure bar —
+ * while the three columns are measured once, across every row. */
 .origins {
   list-style: none;
   margin: 0;
   padding: 0 var(--sp-5) var(--sp-5);
   display: grid;
-  gap: var(--sp-1);
+  grid-template-columns: minmax(8ch, max-content) 2ch minmax(0, 1fr);
+  row-gap: var(--sp-1);
+  column-gap: var(--sp-3);
   font-family: var(--font-mono);
   font-size: var(--fs-2);
   line-height: var(--lh-mono);
@@ -769,8 +807,8 @@ a {
 
 .origin {
   display: grid;
-  grid-template-columns: minmax(8ch, max-content) 2ch minmax(0, 1fr);
-  gap: var(--sp-3);
+  grid-column: 1 / -1;
+  grid-template-columns: subgrid;
   align-items: baseline;
   padding: var(--sp-2) var(--sp-3);
   border-radius: var(--r-1);

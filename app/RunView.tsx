@@ -225,7 +225,7 @@ export default function RunView() {
       <div className="app__body">
         <div className="rail">
           {status && (
-            <section>
+            <section className="stack">
               <p className="label">run</p>
               <Badge status={status} />
               {meta && (
@@ -260,7 +260,7 @@ export default function RunView() {
           {error && <p className="error">{error}</p>}
 
           {status === 'awaiting' && (
-            <section>
+            <section className="stack">
               <div className="btn-row">
                 <button className="btn btn--primary" onClick={() => resume('continue')}>
                   continue
@@ -278,7 +278,7 @@ export default function RunView() {
           )}
 
           {(steps.length > 0 || pending) && (
-            <section>
+            <section className="stack">
               <p className="label">steps</p>
               <ol className="steps">
                 {steps.map((s) => (
@@ -313,7 +313,7 @@ export default function RunView() {
           )}
 
           {runs.length > 0 && (
-            <section>
+            <section className="stack">
               <p className="label">earlier runs</p>
               <ol className="runs">
                 {runs.map((r) => (
@@ -384,7 +384,7 @@ export default function RunView() {
                 </div>
 
                 {step.asserts.length > 0 && (
-                  <section>
+                  <section className="stack">
                     <p className="label">assertions</p>
                     <ol className="asserts">
                       {step.asserts.map((a, i) => (
@@ -399,7 +399,7 @@ export default function RunView() {
                 )}
 
                 {step.trace && Object.keys(step.trace).length > 0 && (
-                  <section>
+                  <section className="stack">
                     <p className="label">correlation</p>
                     <dl className="kv">
                       {Object.entries(step.trace).map(([key, value]) => (
