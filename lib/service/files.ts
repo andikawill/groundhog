@@ -1,4 +1,5 @@
 import { readFile, readdir, rename, writeFile } from 'node:fs/promises'
+import { join, relative as relativeTo } from 'node:path'
 import { AssetPathError, resolveWithin } from '../engine/index'
 import type { EnvDef, EnvVar, TestCase } from '../engine/index'
 
@@ -64,6 +65,42 @@ export type EnvVarPatch = { key: string; value?: string; secret?: boolean }
 // go the same way for the same reason.
 const USABLE_KEY = /^[^.\s{}]+$/
 
+// The same rule an env key answers to, and for the same reason: a name with a dot is split by
+// the path reader. Step ids, extract names and pool names all need it, so it is exported
+// rather than written a second time somewhere that could drift from this one.
+export function isUsableName(name: string): boolean {
+  return USABLE_KEY.test(name)
+}
+
+// One writer for every file this app edits. Rename rather than truncate-and-write: a crash
+// mid-write leaves the old file intact instead of half a file. Same directory, so the rename
+// cannot cross a device boundary. Two-space JSON with a trailing newline, because these files
+// are tracked in git.
+export async function writeJsonFile(
+  root: string,
+  relative: string,
+  value: unknown,
+): Promise<void> {
+  const path = resolvePath(root, relative)
+  const temporary = `${path}.${process.pid}.tmp`
+  await writeFile(temporary, `${JSON.stringify(value, null, 2)}\n`, 'utf8')
+  await rename(temporary, path)
+}
+
+// Paths relative to the assets root, because that is what a step's body.file holds. Recursive,
+// because those paths nest.
+export async function listAssetFiles(root: string): Promise<string[]> {
+  try {
+    const entries = await readdir(root, { withFileTypes: true, recursive: true })
+    return entries
+      .filter((e) => e.isFile())
+      .map((e) => relativeTo(root, join(e.parentPath, e.name)))
+      .sort()
+  } catch {
+    return []
+  }
+}
+
 export async function writeEnvVar(
   root: string,
   relative: string,
@@ -76,7 +113,6 @@ export async function writeEnvVar(
     throw new FileRequestError(`value for "${patch.key}" must be a string`)
   }
 
-  const path = resolvePath(root, relative)
   const parsed = (await readJson(root, relative)) as Record<string, unknown>
   if (!parsed || !Array.isArray(parsed.vars)) {
     throw new FileRequestError(`"${relative}" has no vars array`)
@@ -101,11 +137,7 @@ export async function writeEnvVar(
   if (at === -1) vars.push(next)
   else vars[at] = next
 
-  // Rename rather than truncate-and-write: a crash mid-write then leaves the old file intact
-  // instead of half a file. Same directory, so the rename cannot cross a device boundary.
-  const temporary = `${path}.${process.pid}.tmp`
-  await writeFile(temporary, `${JSON.stringify(parsed, null, 2)}\n`, 'utf8')
-  await rename(temporary, path)
+  await writeJsonFile(root, relative, parsed)
 
   return parsed as unknown as EnvDef
 }
