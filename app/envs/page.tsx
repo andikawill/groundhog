@@ -14,8 +14,10 @@ export default function Page() {
           </Link>
         </nav>
       </header>
+      {/* One child, because the body row is the full height of the window and the screen's
+          title belongs on the same row as the matrix's write target — both of which are
+          EnvsView's to render, since only it knows the root. */}
       <div className="app__body app__body--wide">
-        <h1 className="title">envs</h1>
         <EnvsView />
       </div>
     </div>

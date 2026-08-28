@@ -28,9 +28,9 @@ const GLYPH: Record<string, string> = {
   interrupted: '!',
 }
 
-function Badge({ status, quiet }: { status: string; quiet?: boolean }) {
+function Badge({ status, quiet, lead }: { status: string; quiet?: boolean; lead?: boolean }) {
   return (
-    <span className={`st st--${status}`}>
+    <span className={`st st--${status}${lead ? ' st--lead' : ''}`}>
       <span className="st__glyph" aria-hidden="true">
         {GLYPH[status] ?? '?'}
       </span>
@@ -43,6 +43,12 @@ function Badge({ status, quiet }: { status: string; quiet?: boolean }) {
 
 const took = (ms: number) => (ms < 1000 ? `${ms}ms` : `${(ms / 1000).toFixed(1)}s`)
 
+// A picker is a product surface, so it offers names: `food-journal`, not
+// `food-journal.case.json`. The option's value is still the path, so what gets sent is
+// unchanged; the filename without its suffix is the closest honest name available here,
+// because /api/files lists files and never opens one to read the `name` a case declares.
+const nameOf = (file: string) => file.replace(/\.(case|env)\.json$/, '')
+
 export default function RunView() {
   const [files, setFiles] = useState<{ cases: string[]; envs: string[] }>({ cases: [], envs: [] })
   const [casePath, setCasePath] = useState('')
@@ -53,8 +59,14 @@ export default function RunView() {
   const [selected, setSelected] = useState<string | null>(null)
   const [error, setError] = useState<string | null>(null)
   const [runs, setRuns] = useState<RunSummary[]>([])
-  const [meta, setMeta] = useState<{ seed: string; anchorAt: string; envName: string } | null>(null)
+  const [meta, setMeta] = useState<{
+    seed: string
+    anchorAt: string
+    envName: string
+    caseName: string
+  } | null>(null)
   const [declared, setDeclared] = useState<Step[]>([])
+  const [guards, setGuards] = useState<Record<string, string>>({})
 
   useEffect(() => {
     void fetch('/api/files')
@@ -63,6 +75,16 @@ export default function RunView() {
         setFiles(f)
         setCasePath(f.cases[0] ?? '')
         setEnvPath(f.envs[0] ?? '')
+      })
+  }, [])
+
+  // An env that refuses writes or asks for confirmation has to say so where you pick it, not
+  // only on the envs screen. The guard lives in the env file, and /api/envs is what reads it.
+  useEffect(() => {
+    void fetch('/api/envs')
+      .then((r) => r.json())
+      .then((matrix: { envs: { file: string; guard: string }[] }) => {
+        setGuards(Object.fromEntries(matrix.envs.map((e) => [e.file, e.guard])))
       })
   }, [])
 
@@ -154,7 +176,12 @@ export default function RunView() {
     setSelected(null)
     setRunId(id)
     setStatus(body.status)
-    setMeta({ seed: body.seed, anchorAt: body.anchorAt, envName: body.envName })
+    setMeta({
+      seed: body.seed,
+      anchorAt: body.anchorAt,
+      envName: body.envName,
+      caseName: body.caseName,
+    })
     // The declaration the run started from, not the file as it stands now. It is what names
     // the step a paused or running run is sitting on.
     setDeclared(body.caseSnapshot?.steps ?? [])
@@ -173,40 +200,49 @@ export default function RunView() {
 
   const origins = Object.entries(step?.origins ?? {})
 
+  // Where the shown step sits in the case. Derived from what the screen already holds — the
+  // results so far and the declaration the run started from — and it is the pane's only
+  // orientation: without it a step id is a name with no position.
+  const position = step
+    ? `step ${steps.findIndex((s) => s.id === step.id) + 1} of ${declared.length || steps.length}`
+    : ''
+
   return (
     <div className="app">
       <header className="app__header">
         <span className="brand">groundhog</span>
 
-        <div className="picker">
+        {/* The label is visible rather than an aria-label: two adjacent unlabelled selects
+            are a guess, and the words cost 40px. The <label> wrapper is the association, so
+            no id is needed on either. */}
+        <label className="picker">
+          <span className="picker__label">case</span>
           <select
             className="select"
-            aria-label="case"
             value={casePath}
             onChange={(e) => setCasePath(e.target.value)}
           >
             {files.cases.map((f) => (
               <option key={f} value={f}>
-                {f}
+                {nameOf(f)}
               </option>
             ))}
           </select>
-        </div>
+        </label>
 
-        <div className="picker">
-          <select
-            className="select"
-            aria-label="env"
-            value={envPath}
-            onChange={(e) => setEnvPath(e.target.value)}
-          >
+        <label className="picker">
+          <span className="picker__label">env</span>
+          <select className="select" value={envPath} onChange={(e) => setEnvPath(e.target.value)}>
             {files.envs.map((f) => (
               <option key={f} value={f}>
-                {f}
+                {guards[f] && guards[f] !== 'none' ? `${nameOf(f)} · ${guards[f]}` : nameOf(f)}
               </option>
             ))}
           </select>
-        </div>
+          {guards[envPath] && guards[envPath] !== 'none' && (
+            <span className={`guard guard--${guards[envPath]}`}>{guards[envPath]}</span>
+          )}
+        </label>
 
         <button className="btn btn--primary" onClick={start} disabled={status === 'running'}>
           run
@@ -227,17 +263,22 @@ export default function RunView() {
           {status && (
             <section className="stack">
               <p className="label">run</p>
-              <Badge status={status} />
+              {/* The one thing on this screen that is a size larger than everything else:
+                  whether the run passed is the screen's subject. */}
+              <Badge status={status} lead />
               {meta && (
                 <dl className="kv">
+                  {/* The case's own name, not the file it came from. A run is of a case. */}
+                  <dt className="kv__k">case</dt>
+                  <dd className="kv__v">{meta.caseName}</dd>
+                  <dt className="kv__k">env</dt>
+                  <dd className="kv__v">{meta.envName}</dd>
                   <dt className="kv__k">seed</dt>
                   <dd className="kv__v">
                     <span className="seed">{meta.seed}</span>
                   </dd>
                   <dt className="kv__k">anchor</dt>
                   <dd className="kv__v">{meta.anchorAt}</dd>
-                  <dt className="kv__k">env</dt>
-                  <dd className="kv__v">{meta.envName}</dd>
                 </dl>
               )}
               {settled && (
@@ -257,7 +298,13 @@ export default function RunView() {
             </section>
           )}
 
-          {error && <p className="error">{error}</p>}
+          {/* Wrapped, because the rail's rhythm and its dividers are addressed to .stack. A
+              bare child would sit flush against the region above it and break the chain. */}
+          {error && (
+            <section className="stack">
+              <p className="error">{error}</p>
+            </section>
+          )}
 
           {status === 'awaiting' && (
             <section className="stack">
@@ -340,8 +387,22 @@ export default function RunView() {
           {step ? (
             <>
               <div className="pane__head">
-                <h2 className="pane__title">{step.id}</h2>
-                <Badge status={step.status} />
+                <div className="pane__heading">
+                  <p className="pane__eyebrow">
+                    {position}
+                    {step.title && (
+                      <>
+                        {' · '}
+                        <span className="mono">{step.id}</span>
+                      </>
+                    )}
+                  </p>
+                  {/* The step's declared title, which the engine already records and the API
+                      already returns. The id is a reference and stays one — it goes in the
+                      eyebrow above, where {{ctx.*}} readers will look for it. */}
+                  <h1 className="pane__title">{step.title ?? step.id}</h1>
+                  <Badge status={step.status} lead />
+                </div>
               </div>
               <div className="pane__body">
                 {step.reason && <p className="error">{step.reason}</p>}
@@ -349,9 +410,14 @@ export default function RunView() {
                 <div className="evidence">
                   <div className="evidence__head">
                     <p className="evidence__req">
-                      {step.request
-                        ? `${step.request.method} ${step.request.url}`
-                        : 'nothing was sent'}
+                      {step.request ? (
+                        <>
+                          <span className="evidence__method">{step.request.method}</span>{' '}
+                          {step.request.url}
+                        </>
+                      ) : (
+                        'nothing was sent'
+                      )}
                     </p>
                   </div>
 
@@ -361,7 +427,7 @@ export default function RunView() {
 
                   <div className="evidence__section">
                     <span className="label">where each value came from</span>
-                    <span className="meta">
+                    <span className="meta evidence__count">
                       {origins.length} {origins.length === 1 ? 'value' : 'values'}
                     </span>
                   </div>
@@ -390,7 +456,9 @@ export default function RunView() {
                       {step.asserts.map((a, i) => (
                         <li className={a.ok ? 'assert' : 'assert assert--failed'} key={i}>
                           <Badge status={a.ok ? 'passed' : 'failed'} quiet />
-                          <span className="mono">{a.expr}</span>
+                          {/* The row is already monospace; a .mono here would drop the
+                              expression back to the reference size. */}
+                          <span>{a.expr}</span>
                           {a.detail && <span className="assert__detail">{a.detail}</span>}
                         </li>
                       ))}
@@ -403,7 +471,7 @@ export default function RunView() {
                     <p className="label">correlation</p>
                     <dl className="kv">
                       {Object.entries(step.trace).map(([key, value]) => (
-                        <div key={key} style={{ display: 'contents' }}>
+                        <div className="kv__pair" key={key}>
                           <dt className="kv__k">{key}</dt>
                           <dd className="kv__v">{value}</dd>
                         </div>

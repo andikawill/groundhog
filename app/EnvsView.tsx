@@ -1,6 +1,6 @@
 'use client'
 
-import { useEffect, useState } from 'react'
+import { useEffect, useState, type ReactNode } from 'react'
 
 // Declared here rather than imported from the store: this is a client component, and that
 // module reaches the filesystem. The shapes are small and the wire format is the contract.
@@ -24,7 +24,21 @@ export default function EnvsView() {
       .then(setMatrix)
   }, [])
 
-  if (!matrix) return <p className="empty">loading</p>
+  // The head is the same in both branches, so the title does not appear a beat after the
+  // screen does. Its right-hand slot is the write target, which is a fact about the matrix
+  // and belongs on the matrix's own header row rather than floating above it.
+  const shell = (head: ReactNode, body: ReactNode) => (
+    <div className="pane">
+      <div className="pane__head">
+        <h1 className="title">envs</h1>
+        <span className="spacer" />
+        {head}
+      </div>
+      <div className="pane__body">{body}</div>
+    </div>
+  )
+
+  if (!matrix) return shell(null, <p className="empty">loading</p>)
 
   const columns = [...(matrix.shared ? [matrix.shared] : []), ...matrix.envs]
   const keys = [...new Set(columns.flatMap((c) => c.vars.map((v) => v.key)))].sort()
@@ -70,12 +84,11 @@ export default function EnvsView() {
     setNewKey('')
   }
 
-  return (
+  return shell(
+    <p className="meta">
+      writing to <span className="mono">{matrix.root}</span>
+    </p>,
     <>
-      <p className="meta">
-        writing to <span className="mono">{matrix.root}</span>
-      </p>
-
       {error && <p className="error">{error}</p>}
 
       <div className="table-scroll">
@@ -166,21 +179,25 @@ export default function EnvsView() {
         </table>
       </div>
 
-      <div className="field field--key">
-        <label className="field__label" htmlFor="add-variable">
-          add a variable
-        </label>
-        <input
-          id="add-variable"
-          className="input input--mono"
-          value={newKey}
-          onChange={(e) => setNewKey(e.target.value)}
-        />
-      </div>
+      {/* Field and caveat are one thing, so they sit at the rhythm inside a region rather
+          than at the rhythm between regions. */}
+      <div className="stack">
+        <div className="field field--key">
+          <label className="field__label" htmlFor="add-variable">
+            add a variable
+          </label>
+          <input
+            id="add-variable"
+            className="input input--mono"
+            value={newKey}
+            onChange={(e) => setNewKey(e.target.value)}
+          />
+        </div>
 
-      <p className="hint">
-        The row is yours until you type a value — nothing is written before that.
-      </p>
-    </>
+        <p className="hint">
+          The row is yours until you type a value — nothing is written before that.
+        </p>
+      </div>
+    </>,
   )
 }
