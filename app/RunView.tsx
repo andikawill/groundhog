@@ -67,6 +67,7 @@ export default function RunView() {
   } | null>(null)
   const [declared, setDeclared] = useState<Step[]>([])
   const [guards, setGuards] = useState<Record<string, string>>({})
+  const [confirmed, setConfirmed] = useState(false)
 
   useEffect(() => {
     void fetch('/api/files')
@@ -127,7 +128,7 @@ export default function RunView() {
     setSelected(null)
     const res = await fetch('/api/runs', {
       method: 'POST',
-      body: JSON.stringify({ casePath, envPath }),
+      body: JSON.stringify({ casePath, envPath, confirmed }),
     })
     const body = await res.json()
     if (!res.ok) {
@@ -232,19 +233,45 @@ export default function RunView() {
 
         <label className="picker">
           <span className="picker__label">env</span>
-          <select className="select" value={envPath} onChange={(e) => setEnvPath(e.target.value)}>
+          <select
+            className="select"
+            value={envPath}
+            onChange={(e) => {
+              setEnvPath(e.target.value)
+              setConfirmed(false)
+            }}
+          >
             {files.envs.map((f) => (
               <option key={f} value={f}>
                 {guards[f] && guards[f] !== 'none' ? `${nameOf(f)} · ${guards[f]}` : nameOf(f)}
               </option>
             ))}
           </select>
-          {guards[envPath] && guards[envPath] !== 'none' && (
-            <span className={`guard guard--${guards[envPath]}`}>{guards[envPath]}</span>
+          {guards[envPath] === 'confirm' && (
+            // A confirm guard is a question, and until now the screen had no way to answer it:
+            // pre-flight refused every run against such an env while the CLI could pass --yes.
+            // Pressed is the answer, and it resets with the env so it can never carry over.
+            <button
+              className="guard guard--confirm"
+              aria-pressed={confirmed ? 'true' : 'false'}
+              onClick={() => setConfirmed((yes) => !yes)}
+              title="this env asks for confirmation before a run"
+            >
+              confirm
+            </button>
+          )}
+          {guards[envPath] === 'readonly' && (
+            // Not a toggle: readonly refuses a mutating step outright, and confirming cannot
+            // make it agree. Offering a button here would promise something it cannot do.
+            <span className="guard guard--readonly">readonly</span>
           )}
         </label>
 
-        <button className="btn btn--primary" onClick={start} disabled={status === 'running'}>
+        <button
+          className="btn btn--primary"
+          onClick={start}
+          disabled={status === 'running' || (guards[envPath] === 'confirm' && !confirmed)}
+        >
           run
         </button>
 
